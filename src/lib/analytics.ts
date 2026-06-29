@@ -40,12 +40,13 @@ export function initAnalytics(): void {
 }
 
 /** A distinct screen in the SPA. Reported as a virtual page_view. */
-export type View = 'landing' | 'deck' | 'study' | 'summary'
+export type View = 'landing' | 'deck' | 'study' | 'chat' | 'summary'
 
 const VIEW_PATHS: Record<View, { path: string; title: string }> = {
   landing: { path: '/', title: 'ankibot — landing' },
   deck: { path: '/deck', title: 'ankibot — deck' },
   study: { path: '/study', title: 'ankibot — study' },
+  chat: { path: '/chat', title: 'ankibot — chat' },
   summary: { path: '/summary', title: 'ankibot — summary' },
 }
 

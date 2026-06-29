@@ -13,9 +13,13 @@ function formatWhen(ms: number, now: number): string {
   return `in ${days} day${days === 1 ? '' : 's'}`
 }
 
+type StudyMode = 'flashcards' | 'chat'
+
 export function DeckView({
   deck,
   swap,
+  mode,
+  onSetMode,
   onToggleSwap,
   onStudy,
   onStudyAhead,
@@ -26,6 +30,8 @@ export function DeckView({
 }: {
   deck: Deck
   swap: boolean
+  mode: StudyMode
+  onSetMode: (mode: StudyMode) => void
   onToggleSwap: () => void
   onStudy: () => void
   onStudyAhead: () => void
@@ -57,15 +63,47 @@ export function DeckView({
         </span>
       </div>
 
+      {/* Mode toggle — flashcards and the AI examiner are separate, switchable
+          surfaces over the same deck and scheduler. */}
+      <div className="mt-5">
+        <div
+          role="radiogroup"
+          aria-label="Study mode"
+          className="inline-flex rounded-lg border border-neutral-200 p-0.5 dark:border-neutral-800"
+        >
+          {(['flashcards', 'chat'] as const).map((m) => (
+            <button
+              key={m}
+              type="button"
+              role="radio"
+              aria-checked={mode === m}
+              onClick={() => onSetMode(m)}
+              className={`rounded-md px-3 py-1.5 text-sm font-medium capitalize transition-colors ${
+                mode === m
+                  ? 'bg-neutral-900 text-white dark:bg-neutral-100 dark:text-neutral-900'
+                  : 'text-neutral-600 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-neutral-100'
+              }`}
+            >
+              {m === 'chat' ? 'Chat' : 'Flashcards'}
+            </button>
+          ))}
+        </div>
+        <p className="mt-1.5 text-xs text-neutral-500">
+          {mode === 'chat'
+            ? 'An AI examiner quizzes you and judges what you know — results update your schedule.'
+            : 'Flip cards and grade yourself. Quiet and offline.'}
+        </p>
+      </div>
+
       {/* Study controls */}
-      <div className="mt-5 flex flex-wrap items-center gap-3">
+      <div className="mt-4 flex flex-wrap items-center gap-3">
         {dueCount > 0 ? (
           <button
             type="button"
             onClick={onStudy}
             className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-700 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-300"
           >
-            Study {sessionSize} now
+            {mode === 'chat' ? 'Quiz me on' : 'Study'} {sessionSize} now
           </button>
         ) : (
           <div className="rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm text-neutral-600 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-400">
@@ -83,15 +121,17 @@ export function DeckView({
           </div>
         )}
 
-        <label className="flex cursor-pointer items-center gap-2 text-sm text-neutral-600 dark:text-neutral-400">
-          <input
-            type="checkbox"
-            checked={swap}
-            onChange={onToggleSwap}
-            className="h-4 w-4 accent-neutral-700"
-          />
-          Swap front / back
-        </label>
+        {mode === 'flashcards' && (
+          <label className="flex cursor-pointer items-center gap-2 text-sm text-neutral-600 dark:text-neutral-400">
+            <input
+              type="checkbox"
+              checked={swap}
+              onChange={onToggleSwap}
+              className="h-4 w-4 accent-neutral-700"
+            />
+            Swap front / back
+          </label>
+        )}
 
         <button
           type="button"

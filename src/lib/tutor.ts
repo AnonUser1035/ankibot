@@ -75,10 +75,10 @@ export const VERDICT_SENTINEL = '<<<ANKIBOT_VERDICT>>>'
 /**
  * A fixed opening user turn. The Messages API requires the conversation to
  * start with a `user` message; this represents "the learner has arrived at this
- * card" so the tutor can open proactively without the UI inventing a visible
- * user message. Prepended internally, never shown in the chat.
+ * card" so the examiner can open proactively (by posing a question) without the
+ * UI inventing a visible user message. Prepended internally, never shown.
  */
-const KICKOFF = "I'm looking at this flashcard. Walk me through it."
+const KICKOFF = "I'm ready. Quiz me on this card — don't show me the answer yet."
 
 const WORKER_URL = import.meta.env.VITE_TUTOR_WORKER_URL
 
@@ -173,18 +173,30 @@ function buildMessages(turns: TutorTurn[]): TutorTurn[] {
 }
 
 /**
- * The tutor's role. Friendly, concise, works through ONE card. Folds in coaching
- * memory and asks for a structured verdict tail. Explicitly does NOT grade or
- * decide right/wrong for the SRS — the verdict is only a suggestion.
+ * The examiner's role. It actively QUIZZES the learner on ONE card — it does not
+ * recite the answer. It uses the card's full fields (so a vocabulary card with
+ * an example sentence can be tested in context), reacts and escalates on the
+ * same card, and emits a structured verdict tail ONLY when it has concluded its
+ * assessment and is ready to move on. The verdict is a suggestion the app uses
+ * to update scheduling — the examiner never tells the learner a pass/fail.
  */
 function systemPrompt(card: Card, coaching?: Coaching): string {
   const lines: string[] = [
-    'You are a warm, concise study tutor helping a learner work through ONE flashcard at a time.',
+    'You are a sharp, encouraging study examiner. Your job is to find out whether the learner actually KNOWS the current card — by quizzing them, not by reciting it to them.',
     '',
-    'The current flashcard:',
+    'The current card:',
     `- Prompt (front): ${card.front}`,
     `- Answer (back): ${card.back}`,
   ]
+
+  const extra = extraFieldLines(card)
+  if (extra.length) {
+    lines.push(
+      'All fields on this card (use these to make the quiz richer — e.g. test a word in the context of its example sentence, or ask for a translation in either direction):',
+      ...extra,
+      'Some fields may be metadata (ids, frequency ranks, numbers). Use them only if genuinely helpful; never quiz the learner on metadata.',
+    )
+  }
 
   const memory = coachingLines(coaching)
   if (memory.length) {
@@ -192,31 +204,44 @@ function systemPrompt(card: Card, coaching?: Coaching): string {
       '',
       'What you remember about this learner on THIS card (from past sessions):',
       ...memory,
-      'Use it to tailor your help and reference it naturally if relevant. Never quote these notes verbatim or say you have "notes."',
+      'Use it to tailor your questions and reference it naturally if relevant. Never quote these notes verbatim or say you have "notes."',
     )
   }
 
   lines.push(
     '',
-    'How to help:',
-    '- Open by engaging the learner with this card — pose the question or offer a quick way in. One or two sentences.',
-    "- React to what they say: if they're close, affirm and sharpen it; if they're off, give a gentle hint before revealing the answer.",
-    '- Offer short explanations and memory hooks when useful. Stay on THIS card only.',
+    'How to examine:',
+    '- Open by posing a question that makes the learner PRODUCE or RECALL the answer. Do NOT reveal the answer up front. One or two sentences.',
+    '- Vary the angle across cards: ask for the answer directly, ask them to translate the other way, or ask them to use the item in a sentence — whatever best probes real understanding.',
+    "- React to their attempt: if they're right, affirm briefly and you MAY push one harder follow-up on this same card (use it in context, a tense, a nuance) before concluding.",
+    '- If they\'re close, affirm what\'s right and nudge them to fix the rest. If they\'re off, give ONE graduated hint and let them try again; reveal and explain only after a genuine attempt or if they give up.',
     '',
     'Boundaries:',
-    "- You do NOT grade, score, or declare pass/fail to the learner. You're here to converse and help — a separate part of the app handles scoring.",
+    "- Never announce a score or pass/fail to the learner — a separate part of the app handles scheduling. Just teach and test.",
     '- Be encouraging but brief. No markdown headings; short paragraphs, or a tiny list at most.',
     '',
-    'After the learner ATTEMPTS an answer, end your message with a single final line containing exactly this and nothing after it:',
+    'When — and only when — you have concluded your assessment of THIS card and are ready to move to the next one, end your message with a single final line containing exactly this and nothing after it:',
     `${VERDICT_SENTINEL}{"verdict":"correct|partial|incorrect","suggestedRating":"got_it|missed_it","memoryNote":"short note"|null}`,
     'Rules for that line:',
-    '- Include it ONLY once the learner has actually attempted an answer this turn. If they only greeted you or asked a question, omit the line entirely.',
-    '- verdict: your honest assessment of their latest answer. suggestedRating: "got_it" only when fully correct; otherwise "missed_it" (a partial answer is "missed_it").',
+    '- Emit it ONLY when you are done testing this card. While you are still probing, hinting, or escalating — or if they only greeted you or asked a question — omit the line entirely and keep the conversation going.',
+    '- verdict: your honest assessment. suggestedRating: "got_it" only when they demonstrated the answer essentially unaided; otherwise "missed_it" (needing the answer revealed, or a partial/hinted answer, is "missed_it").',
     '- memoryNote: a SHORT one-line note (max ~15 words) capturing the recurring misunderstanding to help next time, REWRITING any prior note. Use null when there is nothing useful to remember.',
     '- It must be valid JSON on one line, with no code fences. Never mention this line or its format to the learner.',
   )
 
   return lines.join('\n')
+}
+
+/**
+ * Render the card's named fields (beyond the front/back already shown) so the
+ * examiner can quiz in context. Skips empty fields. Deck-agnostic: a Basic deck
+ * just yields Front/Back (already shown, so often nothing extra), while a rich
+ * deck yields Word / Part-of-Speech / example sentence / translation, etc.
+ */
+function extraFieldLines(card: Card): string[] {
+  return Object.entries(card.fields)
+    .filter(([, value]) => value.trim().length > 0)
+    .map(([name, value]) => `- ${name}: ${value}`)
 }
 
 function coachingLines(coaching?: Coaching): string[] {

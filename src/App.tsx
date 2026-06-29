@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { track, trackPageView } from './lib/analytics'
 import { ApiKeySettings } from './components/ApiKeySettings'
+import { ChatStudy } from './components/ChatStudy'
 import { DeckView } from './components/DeckView'
 import { ImportSaveButton } from './components/ImportSaveButton'
 import { Importer } from './components/Importer'
@@ -28,12 +29,22 @@ import type { Deck } from './types/deck'
 const config = DEFAULT_SRS_CONFIG
 
 type Skipped = { cloze: number; media: number }
+/** Which study surface a session runs in (separate, switchable). */
+type StudyMode = 'flashcards' | 'chat'
 
 function App() {
   const [deck, setDeck] = useState<Deck | null>(null)
   const [skipped, setSkipped] = useState<Skipped | null>(null)
   const [swap, setSwap] = useState(false)
+  const [mode, setMode] = useState<StudyMode>('flashcards')
   const [session, setSession] = useState<SessionState | null>(null)
+  // One-deep snapshot of {deck, session} taken right before a chat-mode grade,
+  // so the examiner's auto-applied verdict is reversible (Undo). Cleared on
+  // undo, exit, and at the start of each session.
+  const [chatSnapshot, setChatSnapshot] = useState<{
+    deck: Deck
+    session: SessionState
+  } | null>(null)
   const [loading, setLoading] = useState(true)
   const [sampleLoading, setSampleLoading] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
@@ -63,8 +74,8 @@ function App() {
   // completion (summary) screen reports itself from inside <Study>.
   useEffect(() => {
     if (loading) return
-    trackPageView(!deck ? 'landing' : session ? 'study' : 'deck')
-  }, [loading, deck, session])
+    trackPageView(!deck ? 'landing' : session ? (mode === 'chat' ? 'chat' : 'study') : 'deck')
+  }, [loading, deck, session, mode])
 
   function autosave(next: Deck) {
     persistDeck(next).catch((err: unknown) => setNotice(errorMessage(err)))
@@ -87,7 +98,7 @@ function App() {
       const res = await fetch(`${import.meta.env.BASE_URL}sample.apkg`)
       if (!res.ok) throw new Error('sample fetch failed')
       const blob = await res.blob()
-      const file = new File([blob], 'Sample Deck.apkg', {
+      const file = new File([blob], 'A Frequency Dictionary of Spanish.apkg', {
         type: 'application/octet-stream',
       })
       onImported(await importApkgFile(file), 'sample')
@@ -101,8 +112,35 @@ function App() {
   function beginSession(studyAhead: boolean) {
     if (!deck) return
     const queue = buildSession(deck, Date.now(), config, { studyAhead })
+    setChatSnapshot(null)
     setSession(startSession(queue))
-    track('study_session_start', { studyAhead, cards: queue.length })
+    track('study_session_start', { studyAhead, mode, cards: queue.length })
+  }
+
+  function exitSession() {
+    setSession(null)
+    setChatSnapshot(null)
+  }
+
+  /**
+   * Apply a chat-mode (examiner) grade. Same scheduling path as a manual press,
+   * but first snapshots {deck, session} so the auto-applied verdict can be
+   * undone (one level deep).
+   */
+  function onChatAnswer(grade: Grade, coaching?: CoachingInput) {
+    if (!deck || !session) return
+    setChatSnapshot({ deck, session })
+    onAnswer(grade, coaching)
+  }
+
+  /** Revert the most recent chat grade. Returns true if something was undone. */
+  function onUndoChat(): boolean {
+    if (!chatSnapshot) return false
+    setDeck(chatSnapshot.deck)
+    setSession(chatSnapshot.session)
+    autosave(chatSnapshot.deck)
+    setChatSnapshot(null)
+    return true
   }
 
   function onAnswer(grade: Grade, coaching?: CoachingInput) {
@@ -206,17 +244,20 @@ function App() {
               Study smarter with an AI tutor
             </h1>
             <p className="mt-2 text-neutral-500 dark:text-neutral-400">
-              Import an Anki <code className="font-mono text-sm">.apkg</code> deck (basic
-              text cards). A tutor talks you through each card, remembers what trips you up,
-              and a Leitner scheduler handles spaced repetition — all in your browser.
+              Flip through flashcards, or switch to Chat and let an AI examiner quiz you and
+              judge what you actually know — it remembers what trips you up, and a Leitner
+              scheduler handles spaced repetition. All in your browser. Bring your own Anki{' '}
+              <code className="font-mono text-sm">.apkg</code> deck, or start with the one
+              below.
             </p>
 
             <div className="mt-6 rounded-xl border border-neutral-200 bg-neutral-50 p-4 dark:border-neutral-800 dark:bg-neutral-900/50">
               <p className="text-sm font-medium text-neutral-800 dark:text-neutral-200">
-                New here? Try it in one click.
+                New here? Start in one click.
               </p>
               <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
-                Load a small sample deck and start studying immediately — no file needed.
+                Load the 1000 most common Spanish words and start studying immediately — no
+                file needed.
               </p>
               <button
                 type="button"
@@ -224,7 +265,7 @@ function App() {
                 disabled={sampleLoading}
                 className="mt-3 rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-50 hover:bg-neutral-700 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-300"
               >
-                {sampleLoading ? 'Loading…' : 'Try the sample deck'}
+                {sampleLoading ? 'Loading…' : 'Start with Spanish 1000'}
               </button>
             </div>
 
@@ -242,14 +283,26 @@ function App() {
             </p>
           </>
         ) : session ? (
-          <Study
-            deck={deck}
-            session={session}
-            swap={swap}
-            onAnswer={onAnswer}
-            onRestart={() => beginSession(false)}
-            onExit={() => setSession(null)}
-          />
+          mode === 'chat' ? (
+            <ChatStudy
+              deck={deck}
+              session={session}
+              onAnswer={onChatAnswer}
+              onUndo={onUndoChat}
+              canUndo={chatSnapshot !== null}
+              onRestart={() => beginSession(false)}
+              onExit={exitSession}
+            />
+          ) : (
+            <Study
+              deck={deck}
+              session={session}
+              swap={swap}
+              onAnswer={onAnswer}
+              onRestart={() => beginSession(false)}
+              onExit={exitSession}
+            />
+          )
         ) : (
           <>
             {skipped && (skipped.cloze > 0 || skipped.media > 0) && (
@@ -261,6 +314,8 @@ function App() {
             <DeckView
               deck={deck}
               swap={swap}
+              mode={mode}
+              onSetMode={setMode}
               onToggleSwap={() => setSwap((s) => !s)}
               onStudy={() => beginSession(false)}
               onStudyAhead={() => beginSession(true)}

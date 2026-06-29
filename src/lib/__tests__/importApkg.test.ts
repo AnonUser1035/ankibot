@@ -88,6 +88,29 @@ describe('importApkgArchive — happy path', () => {
   })
 })
 
+describe('bundled default deck (public/sample.apkg)', () => {
+  // Guards the one-click default: the Frequency Dictionary of Spanish deck must
+  // import cleanly with its rich fields intact (the examiner reads card.fields).
+  it('imports all 1000 cards with the Spanish frequency fields', async () => {
+    const bytes = new Uint8Array(fs.readFileSync(path.resolve('public/sample.apkg')))
+    const { deck, skipped } = await importApkgArchive(
+      bytes,
+      'A Frequency Dictionary of Spanish.apkg',
+      SQL,
+    )
+
+    expect(deck.cards).toHaveLength(1000)
+    expect(skipped.cloze).toBe(0)
+    expect(skipped.media).toBe(0)
+
+    // Rich fields the examiner relies on must survive import (not just front/back).
+    const first = deck.cards[0]
+    for (const f of ['Word', 'Part-of-Speech', 'Definition', 'Spanish', 'English']) {
+      expect(first.fields[f] ?? '').not.toBe('')
+    }
+  })
+})
+
 describe('importApkgArchive — media handling (scope guard)', () => {
   it('skips media-only cards and reports the count, keeping text cards', async () => {
     const bytes = await buildMediaApkg(SQL)
