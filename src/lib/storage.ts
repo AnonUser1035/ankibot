@@ -22,6 +22,8 @@ const DB_VERSION = 1
 const DECKS_STORE = 'decks'
 const META_STORE = 'meta'
 const ACTIVE_DECK_KEY = 'activeDeckId'
+/** BYO Anthropic key (phase 7) — the USER's own key, stored in THEIR browser. */
+const USER_API_KEY = 'userApiKey'
 
 interface AnkibotDB extends DBSchema {
   decks: { key: string; value: SaveFile }
@@ -108,6 +110,37 @@ export async function clearAllSavedData(): Promise<void> {
     ])
   } catch (err) {
     throw wrap(err, "Couldn't clear your saved data")
+  }
+}
+
+// --- BYO API key (phase 7) -------------------------------------------------
+// This is the user's OWN Anthropic key, stored locally in their browser at their
+// own risk. Ryan's key is never here — it lives only as a Worker secret.
+
+export async function getStoredApiKey(): Promise<string | null> {
+  try {
+    const db = await getDb()
+    return (await db.get(META_STORE, USER_API_KEY)) ?? null
+  } catch {
+    return null // never block the app on a key read
+  }
+}
+
+export async function storeApiKey(key: string): Promise<void> {
+  try {
+    const db = await getDb()
+    await db.put(META_STORE, key, USER_API_KEY)
+  } catch (err) {
+    throw wrap(err, "Couldn't save your API key to this browser")
+  }
+}
+
+export async function deleteStoredApiKey(): Promise<void> {
+  try {
+    const db = await getDb()
+    await db.delete(META_STORE, USER_API_KEY)
+  } catch (err) {
+    throw wrap(err, "Couldn't clear your saved API key")
   }
 }
 

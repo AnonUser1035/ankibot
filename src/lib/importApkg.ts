@@ -27,6 +27,8 @@ export interface ImportResult {
   skipped: {
     /** Cloze notes skipped (not renderable in v1). */
     cloze: number
+    /** Media-only cards skipped (no usable text after stripping images/audio). */
+    media: number
   }
 }
 
@@ -128,6 +130,7 @@ function parseAnkiDatabase(
     const now = Date.now()
     const cards: Card[] = []
     let clozeSkipped = 0
+    let mediaSkipped = 0
 
     for (const cardRow of cardRows) {
       const note = notesById.get(Number(cardRow.nid))
@@ -184,6 +187,13 @@ function parseAnkiDatabase(
         back = fields[fieldNames[1]] ?? ''
       }
 
+      // Media-only card (e.g. image/audio with no text): nothing to study after
+      // stripping media. Skip it and report, rather than showing a blank card.
+      if (!front.trim() && !back.trim()) {
+        mediaSkipped++
+        continue
+      }
+
       cards.push({
         id: `${note.guid}:${cardRow.ord}`,
         ankiNoteId: Number(note.id),
@@ -198,9 +208,12 @@ function parseAnkiDatabase(
     }
 
     if (cards.length === 0) {
+      const reasons: string[] = []
+      if (clozeSkipped > 0) reasons.push(`${clozeSkipped} cloze`)
+      if (mediaSkipped > 0) reasons.push(`${mediaSkipped} media-only`)
       throw new ImportError(
-        clozeSkipped > 0
-          ? `All ${clozeSkipped} card(s) in this deck are cloze cards, which aren't supported in v1.`
+        reasons.length
+          ? `No text cards to import — skipped ${reasons.join(' and ')} card(s), which aren't supported in v1.`
           : 'No importable cards were found in this deck.',
       )
     }
@@ -211,7 +224,7 @@ function parseAnkiDatabase(
       importedAt: now,
       cards,
     }
-    return { deck, skipped: { cloze: clozeSkipped } }
+    return { deck, skipped: { cloze: clozeSkipped, media: mediaSkipped } }
   } finally {
     db.close()
   }

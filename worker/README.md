@@ -27,9 +27,23 @@ npx wrangler login
 # 3. Set the API key as a SECRET (prompts for the value; not stored in the repo)
 npx wrangler secret put ANTHROPIC_API_KEY
 
-# 4. Deploy and note the printed URL (https://ankibot-tutor.<subdomain>.workers.dev)
+# 4. Create the KV namespace for the monthly spend counter, then paste the
+#    printed id into wrangler.toml (replace REPLACE_WITH_KV_NAMESPACE_ID).
+npx wrangler kv namespace create USAGE
+
+# 5. Deploy and note the printed URL (https://ankibot-tutor.<subdomain>.workers.dev)
 npm run deploy
 ```
+
+### Spend cap
+
+A **global** monthly token budget (input + output across all users — there are no
+accounts) lives in KV, metered from each response's reported usage. Set the
+ceiling via `MONTHLY_TOKEN_BUDGET` in `wrangler.toml` (default `2000000` ≈ ~$5/mo
+on Haiku). When the month's usage reaches the budget, the Worker refuses with a
+friendly message inviting the user to add their own key (which bypasses the
+Worker). To test it, temporarily lower the number and redeploy. If the KV
+namespace isn't bound, the Worker still runs — it just doesn't enforce the cap.
 
 Then point the frontend at it: set `VITE_TUTOR_WORKER_URL` to the deployed URL
 (see the repo root `.env.example`) and rebuild the app.

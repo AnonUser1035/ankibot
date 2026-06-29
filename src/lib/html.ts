@@ -24,6 +24,9 @@ export function stripHtml(html: string): string {
       .replace(/&#39;/g, "'")
   }
 
+  // Drop Anki media markup that isn't HTML: [sound:foo.mp3] audio/video refs.
+  text = text.replace(/\[sound:[^\]]*\]/gi, ' ')
+
   // Collapse runs of whitespace to single spaces.
   return text.replace(/\s+/g, ' ').trim()
 }

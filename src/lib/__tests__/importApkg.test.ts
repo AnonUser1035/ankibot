@@ -9,6 +9,7 @@ import {
   buildEmptyModelsApkg,
   buildJunk,
   buildLeadingNumberApkg,
+  buildMediaApkg,
   buildMixedClozeApkg,
   buildNewerFormatApkg,
   buildNoDbApkg,
@@ -84,6 +85,17 @@ describe('importApkgArchive — happy path', () => {
     expect(deck.cards[1].back).toBe('Thank you')
     // The rank number must not leak into the visible card.
     expect(deck.cards[0].front).not.toBe('1')
+  })
+})
+
+describe('importApkgArchive — media handling (scope guard)', () => {
+  it('skips media-only cards and reports the count, keeping text cards', async () => {
+    const bytes = await buildMediaApkg(SQL)
+    const { deck, skipped } = await importApkgArchive(bytes, 'media.apkg', SQL)
+    expect(deck.cards).toHaveLength(1)
+    expect(deck.cards[0].front).toBe('Real question?')
+    expect(skipped.media).toBe(1)
+    expect(skipped.cloze).toBe(0)
   })
 })
 

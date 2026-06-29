@@ -35,6 +35,8 @@ export function TutorChat({
   const [error, setError] = useState<string | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
   const abortRef = useRef<AbortController | null>(null)
+  // The conversation we last sent, so a mid-stream error can be retried.
+  const lastHistoryRef = useRef<TutorTurn[]>([])
 
   // Proactive opener on mount (once per card — parent keys us by card.id).
   useEffect(() => {
@@ -53,6 +55,7 @@ export function TutorChat({
     abortRef.current?.abort()
     const ctrl = new AbortController()
     abortRef.current = ctrl
+    lastHistoryRef.current = history
 
     setStreaming(true)
     setError(null)
@@ -105,6 +108,18 @@ export function TutorChat({
     runTutor(history)
   }
 
+  /** Stop a streaming reply; drop a trailing empty placeholder if nothing came. */
+  function stop() {
+    abortRef.current?.abort()
+    setStreaming(false)
+    setTurns((t) => (t.at(-1)?.role === 'assistant' && !t.at(-1)?.content ? t.slice(0, -1) : t))
+  }
+
+  /** Retry the last exchange after a mid-stream error. */
+  function retry() {
+    runTutor(lastHistoryRef.current)
+  }
+
   if (!isTutorConfigured()) {
     return (
       <div className="mt-6 rounded-xl border border-dashed border-neutral-300 px-4 py-3 text-sm text-neutral-500 dark:border-neutral-700">
@@ -136,19 +151,24 @@ export function TutorChat({
                   : 'max-w-[85%] whitespace-pre-wrap rounded-2xl bg-neutral-100 px-3 py-2 text-sm text-neutral-800 dark:bg-neutral-800 dark:text-neutral-100'
               }
             >
-              {turn.content || (
-                <span className="inline-block animate-pulse text-neutral-400">…</span>
-              )}
+              {turn.content || <TypingDots />}
             </div>
           </div>
         ))}
         {error && (
-          <p
+          <div
             role="alert"
-            className="rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800 dark:border-red-900 dark:bg-red-950 dark:text-red-200"
+            className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800 dark:border-red-900 dark:bg-red-950 dark:text-red-200"
           >
-            {error}
-          </p>
+            <span>{error}</span>
+            <button
+              type="button"
+              onClick={retry}
+              className="shrink-0 font-medium underline underline-offset-2"
+            >
+              Retry
+            </button>
+          </div>
         )}
         <div ref={bottomRef} />
       </div>
@@ -165,17 +185,39 @@ export function TutorChat({
           value={input}
           onChange={(e) => setInput(e.target.value)}
           placeholder="Type your answer or a question…"
-          className="flex-1 rounded-lg border border-neutral-300 bg-transparent px-3 py-1.5 text-sm outline-none focus:border-neutral-500 dark:border-neutral-700"
+          disabled={streaming}
+          className="min-w-0 flex-1 rounded-lg border border-neutral-300 bg-transparent px-3 py-1.5 text-sm outline-none focus:border-neutral-500 disabled:opacity-60 dark:border-neutral-700"
         />
-        <button
-          type="submit"
-          disabled={streaming || !input.trim()}
-          className="rounded-lg bg-neutral-900 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-40 hover:bg-neutral-700 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-300"
-        >
-          Send
-        </button>
+        {streaming ? (
+          <button
+            type="button"
+            onClick={stop}
+            className="rounded-lg border border-neutral-300 px-3 py-1.5 text-sm font-medium text-neutral-700 hover:bg-neutral-100 dark:border-neutral-700 dark:text-neutral-300 dark:hover:bg-neutral-900"
+          >
+            Stop
+          </button>
+        ) : (
+          <button
+            type="submit"
+            disabled={!input.trim()}
+            className="rounded-lg bg-neutral-900 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-40 hover:bg-neutral-700 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-300"
+          >
+            Send
+          </button>
+        )}
       </form>
     </div>
+  )
+}
+
+/** Animated three-dot typing indicator shown before the first token arrives. */
+function TypingDots() {
+  return (
+    <span className="inline-flex gap-1 py-1" aria-label="Tutor is typing">
+      <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-neutral-400 [animation-delay:-0.3s]" />
+      <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-neutral-400 [animation-delay:-0.15s]" />
+      <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-neutral-400" />
+    </span>
   )
 }
 

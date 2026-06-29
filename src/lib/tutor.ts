@@ -19,6 +19,7 @@
  * persistence. The verdict is only a UI *suggestion* — the human press grades.
  */
 import type { Card, Coaching } from '../types/deck'
+import { getUserApiKey, hasUserApiKey } from './userKey'
 
 /** A single chat turn, as the UI tracks the visible conversation. */
 export interface TutorTurn {
@@ -57,6 +58,11 @@ export class TutorError extends Error {
 /** Default model (decision 2, phase 5). Swapping it is a one-line change here. */
 const MODEL = 'claude-haiku-4-5-20251001'
 
+/** Direct Anthropic endpoint for the BYO-key path (bypasses the Worker + cap). */
+const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages'
+const ANTHROPIC_VERSION = '2023-06-01'
+const MAX_TOKENS = 1024
+
 /** How many recent turns to send. Keeps context tight + cost down. */
 const RECENT_TURNS = 8
 
@@ -76,9 +82,12 @@ const KICKOFF = "I'm looking at this flashcard. Walk me through it."
 
 const WORKER_URL = import.meta.env.VITE_TUTOR_WORKER_URL
 
-/** Whether the tutor is wired up. When false, the UI hides the chat gracefully. */
+/**
+ * Whether the tutor is wired up — either the proxy Worker is configured, or the
+ * user has supplied their own key (BYO). When false, the UI hides the chat.
+ */
 export function isTutorConfigured(): boolean {
-  return typeof WORKER_URL === 'string' && WORKER_URL.length > 0
+  return (typeof WORKER_URL === 'string' && WORKER_URL.length > 0) || hasUserApiKey()
 }
 
 /**
@@ -92,24 +101,35 @@ export function isTutorConfigured(): boolean {
 export async function* respond(
   req: TutorRequest,
 ): AsyncGenerator<string, ParsedVerdict | null, unknown> {
-  if (!WORKER_URL) {
-    throw new TutorError('The AI tutor is not configured for this build.')
-  }
-
-  const body = JSON.stringify({
-    model: MODEL,
-    system: systemPrompt(req.card, req.coaching),
-    messages: buildMessages(req.recentTurns),
-  })
+  const system = systemPrompt(req.card, req.coaching)
+  const messages = buildMessages(req.recentTurns)
+  const userKey = getUserApiKey()
 
   let res: Response
   try {
-    res = await fetch(WORKER_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body,
-      signal: req.signal,
-    })
+    res = userKey
+      ? // BYO key: call Anthropic directly from the browser (bypasses the Worker
+        // and its cap). The user's key never goes through our server.
+        await fetch(ANTHROPIC_URL, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': userKey,
+            'anthropic-version': ANTHROPIC_VERSION,
+            // Opt into direct browser access (per current Anthropic API docs).
+            'anthropic-dangerous-direct-browser-access': 'true',
+          },
+          body: JSON.stringify({
+            model: MODEL,
+            max_tokens: MAX_TOKENS,
+            stream: true,
+            system: [{ type: 'text', text: system, cache_control: { type: 'ephemeral' } }],
+            messages,
+          }),
+          signal: req.signal,
+        })
+      : // Default: go through the proxy Worker (which holds Ryan's key + the cap).
+        await callWorker({ system, messages, signal: req.signal })
   } catch (err) {
     if ((err as Error)?.name === 'AbortError') return null
     throw new TutorError("Couldn't reach the tutor. Check your connection.")
@@ -120,6 +140,26 @@ export async function* respond(
   }
 
   return yield* readSse(res.body, req.signal)
+}
+
+function callWorker(args: {
+  system: string
+  messages: TutorTurn[]
+  signal?: AbortSignal
+}): Promise<Response> {
+  if (!WORKER_URL) {
+    throw new TutorError('The AI tutor is not configured for this build.')
+  }
+  return fetch(WORKER_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: MODEL,
+      system: args.system,
+      messages: args.messages,
+    }),
+    signal: args.signal,
+  })
 }
 
 /**

@@ -2,12 +2,22 @@ name = "ankibot-tutor"
 main = "src/index.ts"
 compatibility_date = "2026-06-29"
 
-# Origin allow-list for CORS. Override here or in the Cloudflare dashboard if the
-# app's live origin changes. The Worker also has built-in defaults (prod domain +
-# localhost) if this is unset.
+# Origin allow-list for CORS. The Worker also has built-in defaults (prod domain
+# + localhost) if this is unset.
 [vars]
 ALLOWED_ORIGINS = "https://ankibot.ryanbohluli.com,http://localhost:3000"
+# Global monthly token budget (input + output) across ALL users — there are no
+# accounts, so this is one ceiling on Ryan's spend. ~2,000,000 tokens ≈ $5/mo on
+# Haiku. Adjust freely.
+MONTHLY_TOKEN_BUDGET = "2000000"
 
-# ANTHROPIC_API_KEY is NOT here — it is a SECRET, set out of band:
+# Monthly usage counter (the spend cap). Create the namespace once:
+#   cd worker && npx wrangler kv namespace create USAGE
+# then paste the printed id below (replace REPLACE_WITH_KV_NAMESPACE_ID).
+[[kv_namespaces]]
+binding = "USAGE"
+id = "REPLACE_WITH_KV_NAMESPACE_ID"
+
+# ANTHROPIC_API_KEY is NOT here — it is a SECRET:
 #   cd worker && npx wrangler secret put ANTHROPIC_API_KEY
 # Never put the key in this file or anywhere in the repo.

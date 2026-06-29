@@ -183,6 +183,26 @@ export function buildLeadingNumberApkg(SQL: SqlJsStatic): Promise<Uint8Array> {
   })
 }
 
+/**
+ * Deck with one normal Basic card and one media-only card (image front, audio
+ * back) that strips to empty text — the importer should skip the media-only one.
+ */
+export function buildMediaApkg(SQL: SqlJsStatic): Promise<Uint8Array> {
+  const notes: NoteSpec[] = [
+    { guid: 'm1', mid: 1, fields: ['Real question?', 'Real answer'] },
+    { guid: 'm2', mid: 1, fields: ['<img src="diagram.png">', '[sound:answer.mp3]'] },
+  ]
+  const cards: CardSpec[] = notes.map((n, i) => ({
+    id: 400 + i,
+    noteGuid: n.guid,
+    ord: 0,
+  }))
+  return zipApkg({
+    'collection.anki21': buildDb(SQL, BASIC_MODEL, notes, cards),
+    media: '{}',
+  })
+}
+
 /** Valid db but zero cards. */
 export function buildEmptyApkg(SQL: SqlJsStatic): Promise<Uint8Array> {
   return zipApkg({
