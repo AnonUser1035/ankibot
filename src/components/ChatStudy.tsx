@@ -55,6 +55,7 @@ export function ChatStudy({
   const [lastGrade, setLastGrade] = useState<{ grade: Grade; front: string } | null>(null)
 
   const bottomRef = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
   const abortRef = useRef<AbortController | null>(null)
   // Exact mirror of `turns` so synchronous logic (slicing the current card's
   // sub-conversation, setting a fresh base) sees the latest value, not a stale
@@ -110,6 +111,15 @@ export function ChatStudy({
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ block: 'end' })
   }, [turns])
+
+  // Keep focus in the answer box once it's usable again. Submitting disables the
+  // input while the examiner streams, which blurs it; refocus when streaming ends
+  // (and on each new card) so the learner can keep typing without reclicking.
+  useEffect(() => {
+    if (!streaming && !complete && isTutorConfigured()) {
+      inputRef.current?.focus()
+    }
+  }, [streaming, complete, currentId])
 
   /** Stream one examiner turn for `history` (the current card's sub-conversation). */
   function runExaminer(history: TutorTurn[]) {
@@ -355,6 +365,7 @@ export function ChatStudy({
           className="flex items-center gap-2 border-t border-neutral-200 px-3 py-2 dark:border-neutral-800"
         >
           <input
+            ref={inputRef}
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
