@@ -68,6 +68,25 @@ describe('serialize / deserialize', () => {
     })
   })
 
+  it('round-trips the daily new-card ledger', () => {
+    const deck = { ...sampleDeck(), dailyNew: { day: 1_700_000_000_000, introduced: 12 } }
+    const { deck: restored } = deserialize(JSON.parse(JSON.stringify(serialize(deck))))
+    expect(restored.dailyNew).toEqual({ day: 1_700_000_000_000, introduced: 12 })
+  })
+
+  it('reads an older save with no ledger as undefined (no introductions)', () => {
+    const deck = sampleDeck()
+    const { deck: restored } = deserialize(JSON.parse(JSON.stringify(serialize(deck))))
+    expect(restored.dailyNew).toBeUndefined()
+  })
+
+  it('ignores a malformed ledger', () => {
+    const base = serialize(sampleDeck())
+    const bad = { ...base, deck: { ...base.deck, dailyNew: { day: 'nope' } } }
+    const { deck } = deserialize(bad)
+    expect(deck.dailyNew).toBeUndefined()
+  })
+
   it('migrates a v1 save (no coaching) by initializing empty coaching', () => {
     const v1 = {
       version: 1,

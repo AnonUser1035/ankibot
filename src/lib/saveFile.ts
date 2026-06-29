@@ -12,15 +12,25 @@
  *  - Serializes the REAL `Deck` shape from types/deck.ts — including every
  *    card's full `reviewState`. We do not redefine the model here.
  */
-import { type Card, type Coaching, type Deck, type ReviewState, newCoaching } from '../types/deck'
+import {
+  type Card,
+  type Coaching,
+  type DailyNew,
+  type Deck,
+  type ReviewState,
+  newCoaching,
+} from '../types/deck'
 
 /**
  * Bump when the serialized structure changes in a way that needs migration.
  *  - v1: initial format (deck + reviewState).
  *  - v2: adds per-card `coaching` memory (phase 6). v1 files migrate by
  *    initializing every card's coaching to empty.
+ *  - v3: adds the deck's `dailyNew` ledger (phase 8). Purely additive — an
+ *    absent ledger reads as "no new cards introduced today", which is the
+ *    correct zero-state, so older saves need no migration step.
  */
-export const SAVE_FORMAT_VERSION = 2
+export const SAVE_FORMAT_VERSION = 3
 
 /** The on-disk / in-IndexedDB record. Plain JSON, no class instances. */
 export interface SaveFile {
@@ -116,7 +126,7 @@ function parseDeck(value: unknown): Deck {
   if (!isObject(value)) {
     throw new SaveFileError('This save file has no deck data.')
   }
-  const { id, name, importedAt, cards } = value
+  const { id, name, importedAt, cards, dailyNew } = value
   if (typeof id !== 'string' || typeof name !== 'string') {
     throw new SaveFileError('This save file is missing its deck name or id.')
   }
@@ -128,7 +138,17 @@ function parseDeck(value: unknown): Deck {
     name,
     importedAt: typeof importedAt === 'number' ? importedAt : 0,
     cards: cards.map((c, i) => parseCard(c, i)),
+    // Absent/invalid ledger → undefined (treated as "none introduced today").
+    dailyNew: parseDailyNew(dailyNew),
   }
+}
+
+/** Parse the daily new-card ledger, or undefined if absent/invalid. */
+function parseDailyNew(value: unknown): DailyNew | undefined {
+  if (!isObject(value)) return undefined
+  const { day, introduced } = value
+  if (typeof day !== 'number' || typeof introduced !== 'number') return undefined
+  return { day, introduced }
 }
 
 function parseCard(value: unknown, index: number): Card {

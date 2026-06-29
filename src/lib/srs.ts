@@ -18,8 +18,12 @@ const DAY_MS = 24 * 60 * 60 * 1000
 export interface SrsConfig {
   /** Interval in days per box; index = box number. Box 0 is due immediately. */
   intervalsDays: number[]
-  /** Max new cards (reps === 0) admitted per session. */
-  newCardsPerSession: number
+  /**
+   * Max NEW cards (reps === 0) introduced per local DAY — a hard cap. Once the
+   * deck's daily ledger reaches this, no new cards are served until tomorrow;
+   * due reviews still appear. (Was per-session; now genuinely per-day.)
+   */
+  newCardsPerDay: number
   /** Optional cap on review (reps > 0) cards per session. */
   maxReviewsPerSession?: number
   /** How many positions back a missed card is re-inserted within a session. */
@@ -28,8 +32,42 @@ export interface SrsConfig {
 
 export const DEFAULT_SRS_CONFIG: SrsConfig = {
   intervalsDays: [0, 1, 2, 4, 8, 16],
-  newCardsPerSession: 20,
+  newCardsPerDay: 20,
   reinsertGap: 3,
+}
+
+/** Local-midnight epoch ms for the day containing `now` — the daily ledger key. */
+export function startOfLocalDay(now: number): number {
+  const d = new Date(now)
+  d.setHours(0, 0, 0, 0)
+  return d.getTime()
+}
+
+/** New cards already introduced today (0 if the ledger is for an earlier day). */
+export function newIntroducedToday(deck: Deck, now: number): number {
+  const today = startOfLocalDay(now)
+  return deck.dailyNew && deck.dailyNew.day === today ? deck.dailyNew.introduced : 0
+}
+
+/** How many new cards may still be introduced today under the daily cap. */
+export function newRemainingToday(
+  deck: Deck,
+  now: number,
+  config: SrsConfig = DEFAULT_SRS_CONFIG,
+): number {
+  return Math.max(0, config.newCardsPerDay - newIntroducedToday(deck, now))
+}
+
+/**
+ * Record that `count` new cards were introduced at `now`, returning a NEW deck
+ * with the daily ledger advanced. Rolls the ledger over to today if it was for
+ * an earlier day. No-op (same reference) when count <= 0.
+ */
+export function recordNewIntroductions(deck: Deck, count: number, now: number): Deck {
+  if (count <= 0) return deck
+  const today = startOfLocalDay(now)
+  const base = deck.dailyNew && deck.dailyNew.day === today ? deck.dailyNew.introduced : 0
+  return { ...deck, dailyNew: { day: today, introduced: base + count } }
 }
 
 /** Highest box index for a given config. */
@@ -112,7 +150,10 @@ export function buildSession(
 
   const byDueAsc = (a: Card, b: Card) => a.reviewState.due - b.reviewState.due
 
-  const news = pool.filter(isNew).sort(byDueAsc).slice(0, config.newCardsPerSession)
+  // New cards are capped by what's left of TODAY's budget, not a flat per-session
+  // number — so finishing a batch doesn't immediately unlock another 20.
+  const newAllowance = newRemainingToday(deck, now, config)
+  const news = pool.filter(isNew).sort(byDueAsc).slice(0, newAllowance)
 
   let reviews = pool.filter((c) => !isNew(c)).sort(byDueAsc)
   if (config.maxReviewsPerSession != null) {

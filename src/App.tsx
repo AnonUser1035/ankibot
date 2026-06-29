@@ -17,7 +17,12 @@ import {
   currentCardId,
   startSession,
 } from './lib/session'
-import { DEFAULT_SRS_CONFIG, type Grade, buildSession } from './lib/srs'
+import {
+  DEFAULT_SRS_CONFIG,
+  type Grade,
+  buildSession,
+  recordNewIntroductions,
+} from './lib/srs'
 import {
   StorageError,
   clearAllSavedData,
@@ -162,6 +167,9 @@ function App() {
     const card = deck.cards.find((c) => c.id === id)
     if (!card) return
     const now = Date.now()
+    // A brand-new card (never reviewed) counts against today's new-card budget
+    // the first time it's studied — captured before applyAnswer bumps reps.
+    const wasNew = card.reviewState.reps === 0
     const { state, updatedCard } = answerCurrent(session, card, grade, now, config)
     // The press grades the SRS (updatedCard.reviewState). Coaching memory rides
     // alongside — deterministic baseline always, AI note when present. The AI
@@ -169,10 +177,12 @@ function App() {
     const coached = applyCoaching(updatedCard, grade, coaching, now)
     const finalCard =
       coached === updatedCard.coaching ? updatedCard : { ...updatedCard, coaching: coached }
-    const nextDeck: Deck = {
+    const withCard: Deck = {
       ...deck,
       cards: deck.cards.map((c) => (c.id === finalCard.id ? finalCard : c)),
     }
+    // Advance the daily ledger so finishing a batch doesn't re-offer 20 more.
+    const nextDeck = wasNew ? recordNewIntroductions(withCard, 1, now) : withCard
     setDeck(nextDeck)
     setSession(state)
     autosave(nextDeck) // persist progress + coaching on every answer

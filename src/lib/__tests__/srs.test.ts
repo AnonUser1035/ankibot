@@ -7,6 +7,10 @@ import {
   buildSession,
   isDue,
   maxBox,
+  newIntroducedToday,
+  newRemainingToday,
+  recordNewIntroductions,
+  startOfLocalDay,
 } from '../srs'
 
 const DAY_MS = 24 * 60 * 60 * 1000
@@ -106,11 +110,11 @@ describe('buildSession', () => {
     expect(session.map((c) => c.id)).toEqual(['due'])
   })
 
-  it('caps new cards per session', () => {
+  it('caps new cards at the daily limit', () => {
     const cards = Array.from({ length: 50 }, (_, i) => makeCard(`n${i}`, T0))
     const session = buildSession(deckOf(cards), T0, {
       ...DEFAULT_SRS_CONFIG,
-      newCardsPerSession: 20,
+      newCardsPerDay: 20,
     })
     expect(session).toHaveLength(20)
   })
@@ -137,5 +141,73 @@ describe('buildSession', () => {
       maxReviewsPerSession: 4,
     })
     expect(session).toHaveLength(4)
+  })
+
+  it('serves no new cards once today\'s budget is spent, but still serves reviews', () => {
+    const news = Array.from({ length: 50 }, (_, i) => makeCard(`n${i}`, T0))
+    const review = makeCard('r', T0, {
+      reviewState: { ...newReviewState(T0), reps: 2, due: T0 - DAY_MS },
+    })
+    const deck = {
+      ...deckOf([...news, review]),
+      dailyNew: { day: startOfLocalDay(T0), introduced: 20 },
+    }
+    const session = buildSession(deck, T0)
+    expect(session.map((c) => c.id)).toEqual(['r']) // review only, zero new
+  })
+
+  it('serves the remainder of the daily budget when partially spent', () => {
+    const news = Array.from({ length: 50 }, (_, i) => makeCard(`n${i}`, T0))
+    const deck = {
+      ...deckOf(news),
+      dailyNew: { day: startOfLocalDay(T0), introduced: 18 },
+    }
+    expect(buildSession(deck, T0)).toHaveLength(2) // 20 - 18
+  })
+
+  it('resets the budget when the ledger is for an earlier day', () => {
+    const news = Array.from({ length: 50 }, (_, i) => makeCard(`n${i}`, T0))
+    const yesterday = startOfLocalDay(T0) - DAY_MS
+    const deck = { ...deckOf(news), dailyNew: { day: yesterday, introduced: 20 } }
+    expect(buildSession(deck, T0)).toHaveLength(20) // yesterday's count doesn't apply
+  })
+})
+
+describe('daily new-card ledger', () => {
+  const deck = { id: 'd', name: 'd', importedAt: T0, cards: [] }
+
+  it('startOfLocalDay is idempotent within a day and stable', () => {
+    const a = startOfLocalDay(T0)
+    expect(startOfLocalDay(a)).toBe(a)
+    expect(startOfLocalDay(T0 + 1000)).toBe(a)
+  })
+
+  it('counts zero introductions for a fresh deck', () => {
+    expect(newIntroducedToday(deck, T0)).toBe(0)
+    expect(newRemainingToday(deck, T0)).toBe(DEFAULT_SRS_CONFIG.newCardsPerDay)
+  })
+
+  it('records and accumulates introductions for today', () => {
+    const d1 = recordNewIntroductions(deck, 1, T0)
+    const d2 = recordNewIntroductions(d1, 1, T0)
+    expect(newIntroducedToday(d2, T0)).toBe(2)
+    expect(newRemainingToday(d2, T0)).toBe(18)
+  })
+
+  it('rolls over to a new day, discarding the old count', () => {
+    const today = recordNewIntroductions(deck, 20, T0)
+    const tomorrow = T0 + DAY_MS
+    expect(newRemainingToday(today, tomorrow)).toBe(DEFAULT_SRS_CONFIG.newCardsPerDay)
+    const bumped = recordNewIntroductions(today, 1, tomorrow)
+    expect(newIntroducedToday(bumped, tomorrow)).toBe(1)
+  })
+
+  it('is a no-op for count <= 0 (same reference)', () => {
+    expect(recordNewIntroductions(deck, 0, T0)).toBe(deck)
+  })
+
+  it('never reports negative remaining when over the limit', () => {
+    const over = { ...deck, dailyNew: { day: startOfLocalDay(T0), introduced: 25 } }
+    expect(newRemainingToday(over, T0)).toBe(0)
   })
 })

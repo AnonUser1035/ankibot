@@ -64,12 +64,32 @@ export interface Card {
   coaching?: Coaching
 }
 
+/**
+ * Per-day new-card budget ledger (phase 8). Tracks how many brand-new cards
+ * have been introduced (first studied) on a given local day, so the scheduler
+ * can enforce an Anki-style daily new-card limit instead of serving an unbounded
+ * 20 every session. Resets implicitly: a `day` that isn't today means zero
+ * introduced today. Optional so older saves (and fresh imports) read as "none".
+ */
+export interface DailyNew {
+  /** Local-midnight epoch ms of the day this count applies to. */
+  day: number
+  /** New cards introduced (first studied) on that day. */
+  introduced: number
+}
+
 export interface Deck {
   id: string
   name: string
   /** Import time, epoch ms. */
   importedAt: number
   cards: Card[]
+  /**
+   * Today's new-card introductions (phase 8). Absent === none introduced today.
+   * The scheduler subtracts this from the daily limit; the answer flow bumps it
+   * the first time each new card is studied.
+   */
+  dailyNew?: DailyNew
 }
 
 /** Build a fresh "new card" review state. Phase 3 owns all later transitions. */

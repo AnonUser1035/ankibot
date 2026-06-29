@@ -1,4 +1,11 @@
-import { DEFAULT_SRS_CONFIG, buildSession, isDue } from '../lib/srs'
+import {
+  DEFAULT_SRS_CONFIG,
+  buildSession,
+  isDue,
+  isNew,
+  newRemainingToday,
+  startOfLocalDay,
+} from '../lib/srs'
 import type { Deck } from '../types/deck'
 import { ImportSaveButton } from './ImportSaveButton'
 
@@ -41,13 +48,24 @@ export function DeckView({
   onClearSavedData: () => void
 }) {
   const now = Date.now()
-  const dueCount = deck.cards.filter((c) => isDue(c, now)).length
-  // How many cards this session will actually serve (after new-card / review caps).
+  // What a session will actually serve right now (after the daily new-card cap
+  // and review caps). This — not the raw due count — gates the Study button.
   const sessionSize = buildSession(deck, now, DEFAULT_SRS_CONFIG).length
-  const nextDue = deck.cards.reduce(
-    (min, c) => (c.reviewState.due < min ? c.reviewState.due : min),
-    Number.POSITIVE_INFINITY,
-  )
+  // New cards still allowed today vs. how many unlearned cards remain in the deck.
+  const newRemaining = newRemainingToday(deck, now)
+  const newInDeck = deck.cards.filter(isNew).length
+  const newToday = Math.min(newRemaining, newInDeck)
+  const dueReviews = deck.cards.filter((c) => !isNew(c) && isDue(c, now)).length
+  // True when there are still unlearned cards but today's budget is spent.
+  const dailyCapReached = newInDeck > 0 && newRemaining === 0
+  // Next time something becomes studyable: soonest review due, or — if only the
+  // daily new-card cap is blocking — tomorrow's local midnight.
+  const nextReviewDue = deck.cards
+    .filter((c) => !isNew(c))
+    .reduce((min, c) => (c.reviewState.due < min ? c.reviewState.due : min), Number.POSITIVE_INFINITY)
+  const nextStudyable = dailyCapReached
+    ? Math.min(nextReviewDue, startOfLocalDay(now) + 24 * 60 * 60 * 1000)
+    : nextReviewDue
 
   const promptLabel = swap ? 'Back' : 'Front'
   const answerLabel = swap ? 'Front' : 'Back'
@@ -59,7 +77,8 @@ export function DeckView({
           {deck.name}
         </h2>
         <span className="text-sm text-neutral-500">
-          {deck.cards.length} card{deck.cards.length === 1 ? '' : 's'} · {dueCount} due
+          {deck.cards.length} card{deck.cards.length === 1 ? '' : 's'} · {newToday} new ·{' '}
+          {dueReviews} review{dueReviews === 1 ? '' : 's'} due
         </span>
       </div>
 
@@ -97,7 +116,7 @@ export function DeckView({
 
       {/* Study controls */}
       <div className="mt-4 flex flex-wrap items-center gap-3">
-        {dueCount > 0 ? (
+        {sessionSize > 0 ? (
           <button
             type="button"
             onClick={onStudy}
@@ -107,9 +126,19 @@ export function DeckView({
           </button>
         ) : (
           <div className="rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm text-neutral-600 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-400">
-            Nothing due right now
-            {Number.isFinite(nextDue) && (
-              <> — next card due {formatWhen(nextDue, now)}.</>
+            {dailyCapReached ? (
+              <>
+                You've studied today's {DEFAULT_SRS_CONFIG.newCardsPerDay} new cards.{' '}
+                {newInDeck} more {newInDeck === 1 ? 'is' : 'are'} waiting
+                {Number.isFinite(nextStudyable) && <> — back {formatWhen(nextStudyable, now)}</>}.
+              </>
+            ) : (
+              <>
+                Nothing due right now
+                {Number.isFinite(nextStudyable) && (
+                  <> — next card due {formatWhen(nextStudyable, now)}.</>
+                )}
+              </>
             )}{' '}
             <button
               type="button"
