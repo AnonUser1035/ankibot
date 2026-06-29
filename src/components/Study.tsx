@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { trackPageView } from '../lib/analytics'
 import type { CoachingInput } from '../lib/coaching'
 import type { Grade } from '../lib/srs'
 import {
@@ -39,6 +40,11 @@ export function Study({
   const card = currentId
     ? (deck.cards.find((c) => c.id === currentId) ?? null)
     : null
+
+  // Reaching the end of the queue swaps the card view for the summary screen.
+  useEffect(() => {
+    if (complete) trackPageView('summary')
+  }, [complete])
 
   const reveal = useCallback(() => setRevealed(true), [])
   const answer = useCallback(

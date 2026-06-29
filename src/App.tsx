@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { track, trackPageView } from './lib/analytics'
 import { ApiKeySettings } from './components/ApiKeySettings'
 import { DeckView } from './components/DeckView'
 import { ImportSaveButton } from './components/ImportSaveButton'
@@ -58,17 +59,25 @@ function App() {
     }
   }, [])
 
+  // Report a virtual pageview whenever the active view changes. Study's
+  // completion (summary) screen reports itself from inside <Study>.
+  useEffect(() => {
+    if (loading) return
+    trackPageView(!deck ? 'landing' : session ? 'study' : 'deck')
+  }, [loading, deck, session])
+
   function autosave(next: Deck) {
     persistDeck(next).catch((err: unknown) => setNotice(errorMessage(err)))
   }
 
-  function onImported(result: ImportResult) {
+  function onImported(result: ImportResult, source: 'file' | 'sample' = 'file') {
     setDeck(result.deck)
     setSkipped(result.skipped)
     setSession(null)
     setSwap(false)
     setNotice(null)
     autosave(result.deck)
+    track('deck_imported', { source, cards: result.deck.cards.length })
   }
 
   async function onTrySample() {
@@ -81,7 +90,7 @@ function App() {
       const file = new File([blob], 'Sample Deck.apkg', {
         type: 'application/octet-stream',
       })
-      onImported(await importApkgFile(file))
+      onImported(await importApkgFile(file), 'sample')
     } catch {
       setNotice('Could not load the sample deck. Try importing your own .apkg file.')
     } finally {
@@ -93,6 +102,7 @@ function App() {
     if (!deck) return
     const queue = buildSession(deck, Date.now(), config, { studyAhead })
     setSession(startSession(queue))
+    track('study_session_start', { studyAhead, cards: queue.length })
   }
 
   function onAnswer(grade: Grade, coaching?: CoachingInput) {
@@ -116,6 +126,7 @@ function App() {
     setDeck(nextDeck)
     setSession(state)
     autosave(nextDeck) // persist progress + coaching on every answer
+    track('card_reviewed', { grade })
   }
 
   function onExport() {

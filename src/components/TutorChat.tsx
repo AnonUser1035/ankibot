@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { track } from '../lib/analytics'
 import {
   type ParsedVerdict,
   type TutorTurn,
@@ -105,6 +106,7 @@ export function TutorChat({
     const history: TutorTurn[] = [...turns, { role: 'user', content: text }]
     setTurns(history)
     setInput('')
+    track('chat_message')
     runTutor(history)
   }
 

@@ -17,6 +17,18 @@
     />
     <meta property="og:type" content="website" />
     <meta name="twitter:card" content="summary" />
+
+    <!-- Google tag (gtag.js) — ankibot property. Auto page_view is disabled so
+         the SPA can send virtual pageviews on view changes (see src/lib/analytics.ts). -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-4KBTZ9MTVF"></script>
+    <script>
+      window.dataLayer = window.dataLayer || []
+      function gtag() {
+        dataLayer.push(arguments)
+      }
+      gtag('js', new Date())
+      gtag('config', 'G-4KBTZ9MTVF', { send_page_view: false })
+    </script>
   </head>
   <body>
     <div id="root"></div>
