@@ -1,0 +1,23 @@
+@import 'tailwindcss';
+
+/* Light touch toward the ryanbohluli.com look: system font, neutral palette. */
+@theme {
+  --font-sans: system-ui, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: ui-monospace, Consolas, monospace;
+}
+
+:root {
+  color-scheme: light dark;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
