@@ -7,6 +7,7 @@ import {
   remaining,
 } from '../lib/session'
 import type { Deck } from '../types/deck'
+import { TutorChat } from './TutorChat'
 
 export function Study({
   deck,
@@ -123,6 +124,10 @@ export function Study({
           </>
         )}
       </div>
+
+      {/* AI tutor for the current card. Keyed by card.id so advancing the card
+          starts a fresh, per-card conversation (decision 4). */}
+      <TutorChat key={card.id} card={card} />
     </div>
   )
 }

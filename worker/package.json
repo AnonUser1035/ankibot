@@ -1,0 +1,16 @@
+{
+  "name": "ankibot-tutor-worker",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Stateless Cloudflare Worker that proxies streaming chat to the Anthropic Messages API, holding the API key as a secret.",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260101.0",
+    "typescript": "~5.9.0",
+    "wrangler": "^4.0.0"
+  }
+}

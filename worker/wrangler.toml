@@ -1,0 +1,13 @@
+name = "ankibot-tutor"
+main = "src/index.ts"
+compatibility_date = "2026-06-29"
+
+# Origin allow-list for CORS. Override here or in the Cloudflare dashboard if the
+# app's live origin changes. The Worker also has built-in defaults (prod domain +
+# localhost) if this is unset.
+[vars]
+ALLOWED_ORIGINS = "https://ankibot.ryanbohluli.com,http://localhost:3000"
+
+# ANTHROPIC_API_KEY is NOT here — it is a SECRET, set out of band:
+#   cd worker && npx wrangler secret put ANTHROPIC_API_KEY
+# Never put the key in this file or anywhere in the repo.

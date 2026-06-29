@@ -29,7 +29,13 @@ jobs:
 
       - run: npm ci
 
+      # Vite inlines VITE_* vars at build time. The tutor Worker URL is public
+      # (the API key lives only as a Worker secret), so it's a repo Variable, not
+      # a Secret. Set it in Settings → Secrets and variables → Actions → Variables.
+      # If unset, the build still succeeds with the AI tutor disabled.
       - run: npm run build
+        env:
+          VITE_TUTOR_WORKER_URL: ${{ vars.VITE_TUTOR_WORKER_URL }}
 
       # SPA fallback: deep links resolve to index.html instead of 404ing.
       - run: cp dist/index.html dist/404.html
