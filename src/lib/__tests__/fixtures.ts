@@ -78,6 +78,14 @@ const BASIC_MODEL = {
       { name: 'Front', ord: 0 },
       { name: 'Back', ord: 1 },
     ],
+    tmpls: [
+      {
+        name: 'Card 1',
+        ord: 0,
+        qfmt: '{{Front}}',
+        afmt: '{{FrontSide}}\n\n<hr id=answer>\n\n{{Back}}',
+      },
+    ],
   },
 }
 
@@ -87,6 +95,32 @@ const CLOZE_MODEL = {
     flds: [
       { name: 'Text', ord: 0 },
       { name: 'Extra', ord: 1 },
+    ],
+    tmpls: [{ name: 'Cloze', ord: 0, qfmt: '{{cloze:Text}}', afmt: '{{cloze:Text}}<br>{{Extra}}' }],
+  },
+}
+
+/**
+ * Notetype whose FIRST field is a numeric rank, with the real question in a
+ * later field. The template (not field position) decides front/back. This
+ * reproduces the import bug where front showed the number and back showed the
+ * actual front.
+ */
+const LEADING_NUMBER_MODEL = {
+  '3': {
+    name: 'Ranked',
+    flds: [
+      { name: 'Rank', ord: 0 },
+      { name: 'Word', ord: 1 },
+      { name: 'Meaning', ord: 2 },
+    ],
+    tmpls: [
+      {
+        name: 'Card 1',
+        ord: 0,
+        qfmt: '{{Word}}',
+        afmt: '{{FrontSide}}<hr id=answer>{{Meaning}}',
+      },
     ],
   },
 }
@@ -124,6 +158,27 @@ export function buildMixedClozeApkg(SQL: SqlJsStatic): Promise<Uint8Array> {
   }))
   return zipApkg({
     'collection.anki2': buildDb(SQL, { ...BASIC_MODEL, ...CLOZE_MODEL }, notes, cards),
+    media: '{}',
+  })
+}
+
+/**
+ * Deck whose notetype leads with a numeric field; front/back must come from the
+ * template, not field position. Front should be the word, back the meaning —
+ * never the rank number.
+ */
+export function buildLeadingNumberApkg(SQL: SqlJsStatic): Promise<Uint8Array> {
+  const notes: NoteSpec[] = [
+    { guid: 'r1', mid: 3, fields: ['1', 'Bonjour', 'Hello'] },
+    { guid: 'r2', mid: 3, fields: ['2', 'Merci', 'Thank you'] },
+  ]
+  const cards: CardSpec[] = notes.map((n, i) => ({
+    id: 300 + i,
+    noteGuid: n.guid,
+    ord: 0,
+  }))
+  return zipApkg({
+    'collection.anki21': buildDb(SQL, LEADING_NUMBER_MODEL, notes, cards),
     media: '{}',
   })
 }

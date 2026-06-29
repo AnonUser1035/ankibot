@@ -147,14 +147,42 @@ function parseAnkiDatabase(
         notetype?.fieldNames ??
         rawValues.map((_, i) => `Field ${i + 1}`)
 
+      // Keep both the raw (HTML) field values — for template rendering — and a
+      // stripped copy for display/storage in `fields`.
+      const rawFields: Record<string, string> = {}
       const fields: Record<string, string> = {}
       rawValues.forEach((value, i) => {
         const name = fieldNames[i] ?? `Field ${i + 1}`
+        rawFields[name] = value
         fields[name] = stripHtml(value)
       })
 
-      const front = fields[fieldNames[0]] ?? ''
-      const back = fields[fieldNames[1]] ?? ''
+      // Render front/back from the card's template (the correct, Anki-faithful
+      // way). The card's `ord` selects which template of the notetype to use.
+      // Fall back to positional fields only when no template is available.
+      const ord = Number(cardRow.ord)
+      const template =
+        notetype?.templates.find((t) => t.ord === ord) ??
+        notetype?.templates[ord] ??
+        notetype?.templates[0]
+
+      let front: string
+      let back: string
+      if (template) {
+        front = stripHtml(renderFront(template.qfmt, rawFields))
+        back = stripHtml(renderBack(template.afmt, rawFields))
+      } else {
+        front = fields[fieldNames[0]] ?? ''
+        back = fields[fieldNames[1]] ?? ''
+      }
+
+      // Defensive fallback: if a template rendered an empty front (unusual
+      // markup we don't support), fall back to positional fields so the card is
+      // still usable rather than blank.
+      if (!front && !back) {
+        front = fields[fieldNames[0]] ?? ''
+        back = fields[fieldNames[1]] ?? ''
+      }
 
       cards.push({
         id: `${note.guid}:${cardRow.ord}`,
@@ -215,12 +243,26 @@ function readNotetypes(db: Database): Map<number, Notetype> {
 
   const map = new Map<number, Notetype>()
   for (const [mid, model] of entries) {
-    const m = model as { name?: string; flds?: Array<{ name?: string; ord?: number }> }
+    const m = model as {
+      name?: string
+      flds?: Array<{ name?: string; ord?: number }>
+      tmpls?: Array<{ name?: string; ord?: number; qfmt?: string; afmt?: string }>
+    }
     const flds = (m.flds ?? [])
       .slice()
       .sort((a, b) => (a.ord ?? 0) - (b.ord ?? 0))
       .map((f) => f.name ?? '')
-    map.set(Number(mid), { name: m.name ?? 'Unknown', fieldNames: flds })
+    const templates: CardTemplate[] = (m.tmpls ?? []).map((t, i) => ({
+      ord: t.ord ?? i,
+      name: t.name ?? `Card ${i + 1}`,
+      qfmt: t.qfmt ?? '',
+      afmt: t.afmt ?? '',
+    }))
+    map.set(Number(mid), {
+      name: m.name ?? 'Unknown',
+      fieldNames: flds,
+      templates,
+    })
   }
   return map
 }

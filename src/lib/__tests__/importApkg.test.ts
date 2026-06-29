@@ -8,6 +8,7 @@ import {
   buildEmptyApkg,
   buildEmptyModelsApkg,
   buildJunk,
+  buildLeadingNumberApkg,
   buildMixedClozeApkg,
   buildNewerFormatApkg,
   buildNoDbApkg,
@@ -67,6 +68,22 @@ describe('importApkgArchive — happy path', () => {
     const bytes = await buildBasicApkg(SQL)
     const { deck } = await importApkgArchive(bytes, 'deck.apkg', SQL)
     expect(deck.cards[0].id).toBe('a:0')
+  })
+
+  it('uses the card template (not field position) for front/back', async () => {
+    // Notetype leads with a numeric "Rank" field; the question/answer live in
+    // later fields and are selected by the template. Regression test: front
+    // must be the word, not the rank number.
+    const bytes = await buildLeadingNumberApkg(SQL)
+    const { deck } = await importApkgArchive(bytes, 'ranked.apkg', SQL)
+
+    expect(deck.cards).toHaveLength(2)
+    expect(deck.cards[0].front).toBe('Bonjour')
+    expect(deck.cards[0].back).toBe('Hello')
+    expect(deck.cards[1].front).toBe('Merci')
+    expect(deck.cards[1].back).toBe('Thank you')
+    // The rank number must not leak into the visible card.
+    expect(deck.cards[0].front).not.toBe('1')
   })
 })
 
