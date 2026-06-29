@@ -36,6 +36,9 @@ jobs:
       - run: npm run build
         env:
           VITE_TUTOR_WORKER_URL: ${{ vars.VITE_TUTOR_WORKER_URL }}
+          # GA4 measurement ID for the ankibot property. Public (not a secret),
+          # so it's a repo Variable. If unset, analytics is disabled.
+          VITE_GA_MEASUREMENT_ID: ${{ vars.VITE_GA_MEASUREMENT_ID }}
 
       # SPA fallback: deep links resolve to index.html instead of 404ing.
       - run: cp dist/index.html dist/404.html
