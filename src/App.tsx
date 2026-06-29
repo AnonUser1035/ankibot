@@ -9,6 +9,7 @@ import { Study } from './components/Study'
 import { type CoachingInput, applyCoaching } from './lib/coaching'
 import { exportDeckToFile, importDeckFromFile } from './lib/export'
 import { type ImportResult, importApkgFile } from './lib/importApkg'
+import { mergeProgress } from './lib/mergeProgress'
 import { SaveFileError } from './lib/saveFile'
 import {
   type SessionState,
@@ -20,6 +21,7 @@ import { DEFAULT_SRS_CONFIG, type Grade, buildSession } from './lib/srs'
 import {
   StorageError,
   clearAllSavedData,
+  getDeck,
   loadActiveDeck,
   persistDeck,
 } from './lib/storage'
@@ -81,14 +83,24 @@ function App() {
     persistDeck(next).catch((err: unknown) => setNotice(errorMessage(err)))
   }
 
-  function onImported(result: ImportResult, source: 'file' | 'sample' = 'file') {
-    setDeck(result.deck)
+  async function onImported(result: ImportResult, source: 'file' | 'sample' = 'file') {
+    // Re-importing the same deck (stable content id) must not wipe progress:
+    // carry existing review state + coaching forward, matched by card id. A
+    // first import (or a storage miss) just uses the fresh deck.
+    let deck = result.deck
+    try {
+      const existing = await getDeck(deck.id)
+      if (existing) deck = mergeProgress(existing, result.deck)
+    } catch {
+      // Non-fatal: fall back to the fresh import.
+    }
+    setDeck(deck)
     setSkipped(result.skipped)
     setSession(null)
     setSwap(false)
     setNotice(null)
-    autosave(result.deck)
-    track('deck_imported', { source, cards: result.deck.cards.length })
+    autosave(deck)
+    track('deck_imported', { source, cards: deck.cards.length })
   }
 
   async function onTrySample() {

@@ -8,6 +8,7 @@ import initSqlJs, { type Database, type SqlJsStatic } from 'sql.js'
 import sqlWasmUrl from 'sql.js/dist/sql-wasm-browser.wasm?url'
 import { type Card, type Deck, newCoaching, newReviewState } from '../types/deck'
 import { type CardTemplate, renderBack, renderFront } from './ankiTemplate'
+import { deckIdFromCards } from './deckId'
 import { stripHtml } from './html'
 
 /** Anki joins a note's field values with the 0x1F unit-separator character. */
@@ -219,7 +220,10 @@ function parseAnkiDatabase(
     }
 
     const deck: Deck = {
-      id: deckName,
+      // Identity is content-derived (stable across renames), so a re-import
+      // resolves to the same saved record and progress can be merged in.
+      // `name` stays the filename for display.
+      id: deckIdFromCards(cards),
       name: deckName,
       importedAt: now,
       cards,

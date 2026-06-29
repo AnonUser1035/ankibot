@@ -14,6 +14,7 @@
  * IndexedDB) surface as a typed StorageError instead of a silent crash.
  */
 import { type DBSchema, type IDBPDatabase, openDB } from 'idb'
+import { deckIdFromCards } from './deckId'
 import { type SaveFile, deserialize, serialize } from './saveFile'
 import type { Deck } from '../types/deck'
 
@@ -82,12 +83,20 @@ export async function persistDeck(deck: Deck): Promise<void> {
  * Restore the active deck on boot. Returns null if storage is empty (fall
  * through to the import prompt). Throws StorageError on I/O failure and
  * SaveFileError (from deserialize) if the stored record is corrupt.
+ *
+ * Legacy decks were keyed by filename; current imports key by a content-derived
+ * id. If the active record is still filename-keyed, re-key it to the content id
+ * here so a later re-import finds it and merges progress. The migration is
+ * best-effort: a write failure never blocks boot (the in-memory id is already
+ * corrected, and the next answer's autosave re-keys it under persistDeck).
  */
 export async function loadActiveDeck(): Promise<Deck | null> {
+  let db: IDBPDatabase<AnkibotDB>
+  let activeId: string | undefined
   let record: SaveFile | undefined
   try {
-    const db = await getDb()
-    const activeId = await db.get(META_STORE, ACTIVE_DECK_KEY)
+    db = await getDb()
+    activeId = await db.get(META_STORE, ACTIVE_DECK_KEY)
     if (!activeId) return null
     record = await db.get(DECKS_STORE, activeId)
     if (!record) return null
@@ -95,7 +104,43 @@ export async function loadActiveDeck(): Promise<Deck | null> {
     throw wrap(err, "Couldn't read your saved progress")
   }
   // deserialize throws SaveFileError on its own — let that propagate untouched.
-  return deserialize(record).deck
+  const deck = deserialize(record).deck
+
+  const contentId = deckIdFromCards(deck.cards)
+  if (deck.id === contentId) return deck
+
+  const migrated: Deck = { ...deck, id: contentId }
+  try {
+    const tx = db.transaction([DECKS_STORE, META_STORE], 'readwrite')
+    await Promise.all([
+      tx.objectStore(DECKS_STORE).put(serialize(migrated), contentId),
+      tx.objectStore(META_STORE).put(contentId, ACTIVE_DECK_KEY),
+      activeId !== contentId
+        ? tx.objectStore(DECKS_STORE).delete(activeId)
+        : Promise.resolve(),
+      tx.done,
+    ])
+  } catch {
+    // Ignore — return the migrated deck regardless; persistDeck fixes storage
+    // on the next answer.
+  }
+  return migrated
+}
+
+/**
+ * Read a saved deck by id, or null if absent. Used by import to find an existing
+ * deck to merge progress from. Never throws: a read/parse failure yields null so
+ * import degrades to a fresh (non-destructive-intent) deck rather than crashing.
+ */
+export async function getDeck(id: string): Promise<Deck | null> {
+  try {
+    const db = await getDb()
+    const record = await db.get(DECKS_STORE, id)
+    if (!record) return null
+    return deserialize(record).deck
+  } catch {
+    return null
+  }
 }
 
 /** Wipe all saved data (both stores). Used by "Clear saved data". */
