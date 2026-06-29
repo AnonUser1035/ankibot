@@ -67,6 +67,16 @@ export function Study({
   useEffect(() => {
     if (complete) return
     function onKey(e: KeyboardEvent) {
+      // Don't hijack keys while typing in the chat (or any input field).
+      const t = e.target as HTMLElement | null
+      if (
+        t &&
+        (t.tagName === 'INPUT' ||
+          t.tagName === 'TEXTAREA' ||
+          t.isContentEditable)
+      ) {
+        return
+      }
       if (e.key === ' ' && !revealed) {
         e.preventDefault()
         reveal()
