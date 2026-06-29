@@ -22,6 +22,30 @@ function formatWhen(ms: number, now: number): string {
 
 type StudyMode = 'flashcards' | 'chat'
 
+/** A compact count chip for the deck's progress breakdown. */
+function Stat({
+  label,
+  value,
+  tone,
+}: {
+  label: string
+  value: number
+  tone: 'active' | 'muted'
+}) {
+  return (
+    <span
+      className={`inline-flex items-baseline gap-1.5 rounded-lg border px-2.5 py-1 text-sm ${
+        tone === 'active'
+          ? 'border-neutral-300 text-neutral-800 dark:border-neutral-700 dark:text-neutral-200'
+          : 'border-neutral-200 text-neutral-500 dark:border-neutral-800 dark:text-neutral-400'
+      }`}
+    >
+      <span className="font-semibold tabular-nums">{value}</span>
+      <span className="text-xs">{label}</span>
+    </span>
+  )
+}
+
 export function DeckView({
   deck,
   swap,
@@ -56,6 +80,12 @@ export function DeckView({
   const newInDeck = deck.cards.filter(isNew).length
   const newToday = Math.min(newRemaining, newInDeck)
   const dueReviews = deck.cards.filter((c) => !isNew(c) && isDue(c, now)).length
+  // Cards you've started (reps >= 1). These are your real progress — surface them
+  // so a deck with studied-but-not-due cards doesn't read as "all new".
+  const learned = deck.cards.filter((c) => !isNew(c)).length
+  // Learned cards scheduled for later (not due now) — they return as reviews.
+  const upcomingReviews = learned - dueReviews
+  const pctLearned = deck.cards.length > 0 ? Math.round((learned / deck.cards.length) * 100) : 0
   // True when there are still unlearned cards but today's budget is spent.
   const dailyCapReached = newInDeck > 0 && newRemaining === 0
   // Next time something becomes studyable: soonest review due, or — if only the
@@ -77,10 +107,36 @@ export function DeckView({
           {deck.name}
         </h2>
         <span className="text-sm text-neutral-500">
-          {deck.cards.length} card{deck.cards.length === 1 ? '' : 's'} · {newToday} new ·{' '}
-          {dueReviews} review{dueReviews === 1 ? '' : 's'} due
+          {deck.cards.length} card{deck.cards.length === 1 ? '' : 's'}
+          {learned > 0 && <> · {pctLearned}% started</>}
         </span>
       </div>
+
+      {/* Progress breakdown — distinguishes "what's actionable now" from the
+          learned cards waiting in the schedule, so studied-but-not-due cards
+          stay visible instead of vanishing into the total. */}
+      <div className="mt-4 flex flex-wrap gap-2">
+        <Stat label="due now" value={dueReviews} tone="active" />
+        <Stat label={`new today${newInDeck > 0 ? ` of ${newInDeck}` : ''}`} value={newToday} tone="active" />
+        <Stat label="learning" value={learned} tone="muted" />
+        <Stat
+          label={
+            upcomingReviews > 0 && Number.isFinite(nextReviewDue)
+              ? `coming up ${formatWhen(nextReviewDue, now)}`
+              : 'coming up'
+          }
+          value={upcomingReviews}
+          tone="muted"
+        />
+      </div>
+      {learned > 0 && (
+        <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-neutral-200 dark:bg-neutral-800">
+          <div
+            className="h-full rounded-full bg-neutral-900 dark:bg-neutral-100"
+            style={{ width: `${pctLearned}%` }}
+          />
+        </div>
+      )}
 
       {/* Mode toggle — flashcards and the AI examiner are separate, switchable
           surfaces over the same deck and scheduler. */}

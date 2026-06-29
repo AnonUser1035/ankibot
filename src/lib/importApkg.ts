@@ -6,7 +6,8 @@ import initSqlJs, { type Database, type SqlJsStatic } from 'sql.js'
 // filename coupling, and it's served with the correct application/wasm MIME
 // (a plain public/ path can fall through to index.html and fail to compile).
 import sqlWasmUrl from 'sql.js/dist/sql-wasm-browser.wasm?url'
-import { type Card, type Deck, newCoaching, newReviewState } from '../types/deck'
+import { type Card, type Deck, newCoaching } from '../types/deck'
+import { reviewStateFromAnki } from './ankiScheduling'
 import { type CardTemplate, renderBack, renderFront } from './ankiTemplate'
 import { deckIdFromCards } from './deckId'
 import { stripHtml } from './html'
@@ -114,12 +115,19 @@ function parseAnkiDatabase(
   const db = new SQL.Database(dbBytes)
   try {
     const notetypes = readNotetypes(db)
+    // Collection creation time (epoch seconds) — the origin for review due dates.
+    const colCrt = readCollectionCrt(db)
 
     const noteRows = queryAll(
       db,
       'SELECT id, guid, mid, flds, tags FROM notes',
     )
-    const cardRows = queryAll(db, 'SELECT id, nid, ord FROM cards')
+    // Pull Anki's scheduling alongside identity so studied decks resume instead
+    // of resetting to new (reviewStateFromAnki maps it onto our ReviewState).
+    const cardRows = queryAll(
+      db,
+      'SELECT id, nid, ord, type, queue, due, ivl, reps, lapses, mod FROM cards',
+    )
 
     if (cardRows.length === 0) {
       throw new ImportError('This deck contains no cards.')
@@ -203,7 +211,19 @@ function parseAnkiDatabase(
         front,
         back,
         tags: String(note.tags).trim().split(/\s+/).filter(Boolean),
-        reviewState: newReviewState(now),
+        reviewState: reviewStateFromAnki(
+          {
+            type: Number(cardRow.type),
+            queue: Number(cardRow.queue),
+            due: Number(cardRow.due),
+            ivl: Number(cardRow.ivl),
+            reps: Number(cardRow.reps),
+            lapses: Number(cardRow.lapses),
+            mod: Number(cardRow.mod),
+          },
+          colCrt,
+          now,
+        ),
         coaching: newCoaching(),
       })
     }
@@ -231,6 +251,21 @@ function parseAnkiDatabase(
     return { deck, skipped: { cloze: clozeSkipped, media: mediaSkipped } }
   } finally {
     db.close()
+  }
+}
+
+/**
+ * Read the collection creation time (`col.crt`, epoch seconds) — the origin
+ * Anki measures review due dates from. Returns 0 if unavailable, which makes
+ * the scheduler fall back to "due now" rather than computing a bogus date.
+ */
+function readCollectionCrt(db: Database): number {
+  try {
+    const rows = queryAll(db, 'SELECT crt FROM col LIMIT 1')
+    const crt = rows.length > 0 ? Number(rows[0].crt) : 0
+    return Number.isFinite(crt) && crt > 0 ? crt : 0
+  } catch {
+    return 0
   }
 }
 

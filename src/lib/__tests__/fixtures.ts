@@ -20,7 +20,20 @@ interface CardSpec {
   /** Links to a note by its guid (resolved to the note rowid internally). */
   noteGuid: string
   ord: number
+  /** Anki scheduling (optional; defaults to a brand-new card). */
+  sched?: Partial<{
+    type: number
+    queue: number
+    due: number
+    ivl: number
+    reps: number
+    lapses: number
+    mod: number
+  }>
 }
+
+/** Collection creation time (epoch seconds) used by the synthetic fixtures. */
+export const FIXTURE_CRT = 1_600_000_000
 
 async function zipApkg(
   entries: Record<string, Uint8Array | string>,
@@ -38,11 +51,16 @@ function buildDb(
 ): Uint8Array {
   const db = new SQL.Database()
   db.run(`
-    CREATE TABLE col (id INTEGER PRIMARY KEY, models TEXT, decks TEXT);
+    CREATE TABLE col (id INTEGER PRIMARY KEY, crt INTEGER, models TEXT, decks TEXT);
     CREATE TABLE notes (id INTEGER PRIMARY KEY, guid TEXT, mid INTEGER, flds TEXT, tags TEXT);
-    CREATE TABLE cards (id INTEGER PRIMARY KEY, nid INTEGER, did INTEGER, ord INTEGER);
+    CREATE TABLE cards (
+      id INTEGER PRIMARY KEY, nid INTEGER, did INTEGER, ord INTEGER,
+      type INTEGER, queue INTEGER, due INTEGER, ivl INTEGER,
+      reps INTEGER, lapses INTEGER, mod INTEGER
+    );
   `)
-  db.run('INSERT INTO col (id, models, decks) VALUES (1, ?, ?)', [
+  db.run('INSERT INTO col (id, crt, models, decks) VALUES (1, ?, ?, ?)', [
+    FIXTURE_CRT,
     JSON.stringify(models),
     JSON.stringify({ '1': { name: 'Default' } }),
   ])
@@ -59,12 +77,24 @@ function buildDb(
     ])
   })
   for (const c of cards) {
-    db.run('INSERT INTO cards (id, nid, did, ord) VALUES (?, ?, ?, ?)', [
-      c.id,
-      noteIdByGuid.get(c.noteGuid) ?? 0,
-      1,
-      c.ord,
-    ])
+    const s = c.sched ?? {}
+    db.run(
+      `INSERT INTO cards (id, nid, did, ord, type, queue, due, ivl, reps, lapses, mod)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        c.id,
+        noteIdByGuid.get(c.noteGuid) ?? 0,
+        1,
+        c.ord,
+        s.type ?? 0,
+        s.queue ?? 0,
+        s.due ?? c.ord,
+        s.ivl ?? 0,
+        s.reps ?? 0,
+        s.lapses ?? 0,
+        s.mod ?? 0,
+      ],
+    )
   }
   const bytes = db.export()
   db.close()
@@ -137,6 +167,41 @@ export function buildBasicApkg(SQL: SqlJsStatic): Promise<Uint8Array> {
     noteGuid: n.guid,
     ord: 0,
   }))
+  return zipApkg({
+    'collection.anki21': buildDb(SQL, BASIC_MODEL, notes, cards),
+    media: '{}',
+  })
+}
+
+/**
+ * A deck already studied in Anki: one brand-new card, one mature review card
+ * (interval 15 days, due 100 days after collection creation), and one lapsed
+ * relearning card. Used to verify the importer resumes Anki's scheduling
+ * instead of resetting everything to new.
+ */
+export function buildStudiedApkg(SQL: SqlJsStatic): Promise<Uint8Array> {
+  const notes: NoteSpec[] = [
+    { guid: 'new1', mid: 1, fields: ['Never studied?', 'right'] },
+    { guid: 'rev1', mid: 1, fields: ['Mature review?', 'yes'] },
+    { guid: 'lap1', mid: 1, fields: ['Lapsed card?', 'relearning'] },
+  ]
+  const cards: CardSpec[] = [
+    { id: 500, noteGuid: 'new1', ord: 0, sched: { type: 0, queue: 0, reps: 0 } },
+    {
+      id: 501,
+      noteGuid: 'rev1',
+      ord: 0,
+      // review card: due is days-since-crt; ivl 15 days; 8 reps, 1 lapse.
+      sched: { type: 2, queue: 2, due: 100, ivl: 15, reps: 8, lapses: 1, mod: 1_650_000_000 },
+    },
+    {
+      id: 502,
+      noteGuid: 'lap1',
+      ord: 0,
+      // relearning: due is an epoch-seconds timestamp; short interval.
+      sched: { type: 3, queue: 1, due: 1_650_500_000, ivl: 1, reps: 12, lapses: 3, mod: 1_650_400_000 },
+    },
+  ]
   return zipApkg({
     'collection.anki21': buildDb(SQL, BASIC_MODEL, notes, cards),
     media: '{}',

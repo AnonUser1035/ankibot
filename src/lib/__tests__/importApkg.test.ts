@@ -4,6 +4,7 @@ import initSqlJs, { type SqlJsStatic } from 'sql.js'
 import { beforeAll, describe, expect, it } from 'vitest'
 import { ImportError, importApkgArchive } from '../importApkg'
 import {
+  FIXTURE_CRT,
   buildBasicApkg,
   buildEmptyApkg,
   buildEmptyModelsApkg,
@@ -13,6 +14,7 @@ import {
   buildMixedClozeApkg,
   buildNewerFormatApkg,
   buildNoDbApkg,
+  buildStudiedApkg,
 } from './fixtures'
 
 let SQL: SqlJsStatic
@@ -69,6 +71,29 @@ describe('importApkgArchive — happy path', () => {
     const bytes = await buildBasicApkg(SQL)
     const { deck } = await importApkgArchive(bytes, 'deck.apkg', SQL)
     expect(deck.cards[0].id).toBe('a:0')
+  })
+
+  it('resumes Anki scheduling for already-studied cards', async () => {
+    const bytes = await buildStudiedApkg(SQL)
+    const { deck } = await importApkgArchive(bytes, 'studied.apkg', SQL)
+    const byId = Object.fromEntries(deck.cards.map((c) => [c.id, c]))
+
+    // Never-studied card stays new.
+    expect(byId['new1:0'].reviewState).toMatchObject({ box: 0, reps: 0, lastReviewed: null })
+
+    // Mature review card carries interval (→ box), reps, lapses and an
+    // absolute due derived from the collection creation time.
+    const review = byId['rev1:0'].reviewState
+    expect(review.reps).toBe(8)
+    expect(review.lapses).toBe(1)
+    expect(review.box).toBe(4)
+    expect(review.due).toBe((FIXTURE_CRT + 100 * 86400) * 1000)
+
+    // Lapsed/relearning card resumes too (epoch-seconds due).
+    const lapsed = byId['lap1:0'].reviewState
+    expect(lapsed.reps).toBe(12)
+    expect(lapsed.lapses).toBe(3)
+    expect(lapsed.due).toBe(1_650_500_000 * 1000)
   })
 
   it('uses the card template (not field position) for front/back', async () => {

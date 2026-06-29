@@ -109,6 +109,35 @@ describe('mergeProgress', () => {
     expect(existing.cards[0].reviewState.box).toBe(3)
   })
 
+  it('lets an un-studied existing card adopt the import schedule (Anki resume)', () => {
+    // Existing card is new (reps 0); import carries a resumed Anki schedule.
+    const existing = makeDeck('d', [makeCard('a:0')])
+    const imported = makeDeck('d', [
+      makeCard('a:0', {
+        reviewState: { box: 4, due: T0 + 5000, reps: 8, lapses: 1, lastReviewed: T0 },
+      }),
+    ])
+
+    const merged = mergeProgress(existing, imported)
+
+    expect(merged.cards[0].reviewState.box).toBe(4) // import schedule wins
+    expect(merged.cards[0].reviewState.reps).toBe(8)
+  })
+
+  it('still protects in-app study against a re-import schedule', () => {
+    const existing = makeDeck('d', [studied('a:0')]) // reps 5, box 3
+    const imported = makeDeck('d', [
+      makeCard('a:0', {
+        reviewState: { box: 1, due: T0, reps: 1, lapses: 0, lastReviewed: T0 },
+      }),
+    ])
+
+    const merged = mergeProgress(existing, imported)
+
+    expect(merged.cards[0].reviewState.box).toBe(3) // existing in-app progress kept
+    expect(merged.cards[0].reviewState.reps).toBe(5)
+  })
+
   it('falls back to imported coaching when the existing record lacks one', () => {
     const old = makeCard('a:0', { reviewState: { box: 2, due: T0, reps: 3, lapses: 0, lastReviewed: T0 } })
     delete old.coaching
