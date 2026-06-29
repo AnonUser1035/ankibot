@@ -1,3 +1,5 @@
+import { Importer } from './components/Importer'
+
 function App() {
   return (
     <div className="flex min-h-full flex-col bg-white text-neutral-800 dark:bg-neutral-950 dark:text-neutral-200">
@@ -9,14 +11,17 @@ function App() {
         </div>
       </header>
 
-      <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col items-center justify-center px-6 py-24 text-center">
-        <h1 className="text-3xl font-semibold tracking-tight text-neutral-900 dark:text-neutral-100">
-          ankibot
+      <main className="mx-auto w-full max-w-3xl flex-1 px-6 py-12">
+        <h1 className="text-2xl font-semibold tracking-tight text-neutral-900 dark:text-neutral-100">
+          Import a deck
         </h1>
-        <p className="mt-3 max-w-md text-neutral-500 dark:text-neutral-400">
-          A flashcard tutor, coming together one phase at a time. This is the
-          scaffold.
+        <p className="mt-2 text-neutral-500 dark:text-neutral-400">
+          Pick an Anki <code className="font-mono text-sm">.apkg</code> file to
+          see its cards. Basic (text) cards only for now.
         </p>
+        <div className="mt-8">
+          <Importer />
+        </div>
       </main>
     </div>
   )
