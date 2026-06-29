@@ -1,5 +1,6 @@
 import { DEFAULT_SRS_CONFIG, buildSession, isDue } from '../lib/srs'
 import type { Deck } from '../types/deck'
+import { ImportSaveButton } from './ImportSaveButton'
 
 function formatWhen(ms: number, now: number): string {
   const diff = ms - now
@@ -19,6 +20,9 @@ export function DeckView({
   onStudy,
   onStudyAhead,
   onReset,
+  onExport,
+  onImportSave,
+  onClearSavedData,
 }: {
   deck: Deck
   swap: boolean
@@ -26,6 +30,9 @@ export function DeckView({
   onStudy: () => void
   onStudyAhead: () => void
   onReset: () => void
+  onExport: () => void
+  onImportSave: (file: File) => void
+  onClearSavedData: () => void
 }) {
   const now = Date.now()
   const dueCount = deck.cards.filter((c) => isDue(c, now)).length
@@ -126,6 +133,45 @@ export function DeckView({
             ))}
           </tbody>
         </table>
+      </div>
+
+      {/* Backup & restore — distinct from the .apkg seed flow above. Progress
+          autosaves to this browser; the exported file is the durable backup. */}
+      <div className="mt-8 rounded-lg border border-neutral-200 p-4 dark:border-neutral-800">
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <h3 className="text-sm font-medium text-neutral-900 dark:text-neutral-100">
+            Backup &amp; restore
+          </h3>
+          <span className="text-xs text-neutral-500">
+            Progress autosaves to this browser.
+          </span>
+        </div>
+        <p className="mt-1 text-xs text-neutral-500">
+          Export a save file to keep a durable copy you own — the file is the
+          backup that outlives this browser.
+        </p>
+        <div className="mt-3 flex flex-wrap items-center gap-3">
+          <button
+            type="button"
+            onClick={onExport}
+            className="rounded-lg border border-neutral-300 px-3 py-1.5 text-sm font-medium text-neutral-800 hover:bg-neutral-100 dark:border-neutral-700 dark:text-neutral-200 dark:hover:bg-neutral-900"
+          >
+            Export save
+          </button>
+          <ImportSaveButton
+            onFile={onImportSave}
+            className="rounded-lg border border-neutral-300 px-3 py-1.5 text-sm font-medium text-neutral-800 hover:bg-neutral-100 dark:border-neutral-700 dark:text-neutral-200 dark:hover:bg-neutral-900"
+          >
+            Import save
+          </ImportSaveButton>
+          <button
+            type="button"
+            onClick={onClearSavedData}
+            className="ml-auto text-sm text-red-700 underline underline-offset-2 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300"
+          >
+            Clear saved data
+          </button>
+        </div>
       </div>
     </div>
   )

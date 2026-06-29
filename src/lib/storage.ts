@@ -1,0 +1,119 @@
+/**
+ * IndexedDB autosave — the convenient everyday persistence layer.
+ *
+ * This is one of two storage paths; both go through the SAME serializer
+ * (saveFile.ts). IndexedDB is the zero-effort layer that survives reloads; the
+ * exported file (export.ts) is the durable backup that outlives this browser.
+ *
+ * Schema (DB_VERSION 1):
+ *  - `decks` store: keyed by deck id, value is a `SaveFile` (canonical form).
+ *    Keyed-by-id so multiple decks can coexist later without a migration.
+ *  - `meta` store: holds `activeDeckId` so boot knows which deck to restore.
+ *
+ * Every call is wrapped so storage failures (private browsing, quota, blocked
+ * IndexedDB) surface as a typed StorageError instead of a silent crash.
+ */
+import { type DBSchema, type IDBPDatabase, openDB } from 'idb'
+import { type SaveFile, deserialize, serialize } from './saveFile'
+import type { Deck } from '../types/deck'
+
+const DB_NAME = 'ankibot'
+const DB_VERSION = 1
+const DECKS_STORE = 'decks'
+const META_STORE = 'meta'
+const ACTIVE_DECK_KEY = 'activeDeckId'
+
+interface AnkibotDB extends DBSchema {
+  decks: { key: string; value: SaveFile }
+  meta: { key: string; value: string }
+}
+
+/** A typed, user-facing failure for any IndexedDB operation. */
+export class StorageError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'StorageError'
+  }
+}
+
+let dbPromise: Promise<IDBPDatabase<AnkibotDB>> | null = null
+
+function getDb(): Promise<IDBPDatabase<AnkibotDB>> {
+  if (!dbPromise) {
+    dbPromise = openDB<AnkibotDB>(DB_NAME, DB_VERSION, {
+      upgrade(db) {
+        if (!db.objectStoreNames.contains(DECKS_STORE)) {
+          db.createObjectStore(DECKS_STORE)
+        }
+        if (!db.objectStoreNames.contains(META_STORE)) {
+          db.createObjectStore(META_STORE)
+        }
+      },
+    }).catch((err) => {
+      // Reset so a later call can retry rather than reusing a rejected promise.
+      dbPromise = null
+      throw wrap(err, "Couldn't open local storage")
+    })
+  }
+  return dbPromise
+}
+
+/**
+ * Persist a deck and mark it active. Called after every answer and on import —
+ * writes are small, so per-answer is fine (debounce only if profiling says so).
+ */
+export async function persistDeck(deck: Deck): Promise<void> {
+  try {
+    const db = await getDb()
+    const tx = db.transaction([DECKS_STORE, META_STORE], 'readwrite')
+    await Promise.all([
+      tx.objectStore(DECKS_STORE).put(serialize(deck), deck.id),
+      tx.objectStore(META_STORE).put(deck.id, ACTIVE_DECK_KEY),
+      tx.done,
+    ])
+  } catch (err) {
+    throw wrap(err, "Couldn't save your progress to this browser")
+  }
+}
+
+/**
+ * Restore the active deck on boot. Returns null if storage is empty (fall
+ * through to the import prompt). Throws StorageError on I/O failure and
+ * SaveFileError (from deserialize) if the stored record is corrupt.
+ */
+export async function loadActiveDeck(): Promise<Deck | null> {
+  let record: SaveFile | undefined
+  try {
+    const db = await getDb()
+    const activeId = await db.get(META_STORE, ACTIVE_DECK_KEY)
+    if (!activeId) return null
+    record = await db.get(DECKS_STORE, activeId)
+    if (!record) return null
+  } catch (err) {
+    throw wrap(err, "Couldn't read your saved progress")
+  }
+  // deserialize throws SaveFileError on its own — let that propagate untouched.
+  return deserialize(record).deck
+}
+
+/** Wipe all saved data (both stores). Used by "Clear saved data". */
+export async function clearAllSavedData(): Promise<void> {
+  try {
+    const db = await getDb()
+    const tx = db.transaction([DECKS_STORE, META_STORE], 'readwrite')
+    await Promise.all([
+      tx.objectStore(DECKS_STORE).clear(),
+      tx.objectStore(META_STORE).clear(),
+      tx.done,
+    ])
+  } catch (err) {
+    throw wrap(err, "Couldn't clear your saved data")
+  }
+}
+
+function wrap(err: unknown, prefix: string): StorageError {
+  const detail = err instanceof Error ? err.message : String(err)
+  return new StorageError(
+    `${prefix}. Your browser may be in private mode or out of space. (${detail})`,
+  )
+}

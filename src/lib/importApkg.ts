@@ -7,6 +7,7 @@ import initSqlJs, { type Database, type SqlJsStatic } from 'sql.js'
 // (a plain public/ path can fall through to index.html and fail to compile).
 import sqlWasmUrl from 'sql.js/dist/sql-wasm-browser.wasm?url'
 import { type Card, type Deck, newReviewState } from '../types/deck'
+import { type CardTemplate, renderBack, renderFront } from './ankiTemplate'
 import { stripHtml } from './html'
 
 /** Anki joins a note's field values with the 0x1F unit-separator character. */
@@ -98,6 +99,8 @@ interface Notetype {
   name: string
   /** Field names in template order. */
   fieldNames: string[]
+  /** Card templates (qfmt/afmt), indexed for lookup by a card's `ord`. */
+  templates: CardTemplate[]
 }
 
 function parseAnkiDatabase(
