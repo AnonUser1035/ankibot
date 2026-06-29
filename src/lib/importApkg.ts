@@ -1,5 +1,11 @@
 import JSZip from 'jszip'
 import initSqlJs, { type Database, type SqlJsStatic } from 'sql.js'
+// Vite resolves sql.js's "browser" export condition, which loads
+// sql-wasm-browser.js and fetches sql-wasm-browser.wasm. Let Vite bundle that
+// exact wasm as a hashed asset and hand us its URL — no public/ copy, no
+// filename coupling, and it's served with the correct application/wasm MIME
+// (a plain public/ path can fall through to index.html and fail to compile).
+import sqlWasmUrl from 'sql.js/dist/sql-wasm-browser.wasm?url'
 import { type Card, type Deck, newReviewState } from '../types/deck'
 import { stripHtml } from './html'
 
@@ -33,9 +39,7 @@ let sqlJsPromise: Promise<SqlJsStatic> | null = null
  */
 export function getSqlJs(): Promise<SqlJsStatic> {
   if (!sqlJsPromise) {
-    sqlJsPromise = initSqlJs({
-      locateFile: (file) => `${import.meta.env.BASE_URL}${file}`,
-    })
+    sqlJsPromise = initSqlJs({ locateFile: () => sqlWasmUrl })
   }
   return sqlJsPromise
 }
