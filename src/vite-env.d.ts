@@ -8,6 +8,13 @@ interface ImportMetaEnv {
    * Worker secret.
    */
   readonly VITE_TUTOR_WORKER_URL?: string
+
+  /**
+   * GA4 measurement ID (e.g. G-XXXXXXXXXX) for the ankibot analytics property.
+   * When unset, analytics is disabled — so dev/preview builds report nothing.
+   * Safe to expose publicly; it's a client-side measurement ID, not a secret.
+   */
+  readonly VITE_GA_MEASUREMENT_ID?: string
 }
 
 interface ImportMeta {

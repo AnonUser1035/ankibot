@@ -1,12 +1,38 @@
-// Thin, typed wrapper around gtag.js (loaded in index.html for the ankibot GA4
-// property). Everything degrades to a no-op when gtag isn't present — e.g. the
-// script is blocked, or in tests — so callers never have to guard.
+// Thin, typed wrapper around gtag.js for the ankibot GA4 property. gtag is
+// bootstrapped by initAnalytics() (called from main.tsx) only when
+// VITE_GA_MEASUREMENT_ID is set — so dev/preview builds without the var report
+// nothing. Everything degrades to a no-op when gtag isn't present (var unset,
+// script blocked, or in tests), so callers never have to guard.
 
 type GtagFn = (command: string, ...args: unknown[]) => void
 
 function gtag(): GtagFn | null {
   const fn = (window as unknown as { gtag?: GtagFn }).gtag
   return typeof fn === 'function' ? fn : null
+}
+
+/**
+ * Load gtag.js and configure the GA4 property. No-op when the measurement ID
+ * is unset. Auto page_view is disabled so the SPA can send virtual pageviews
+ * on view changes (see trackPageView).
+ */
+export function initAnalytics(): void {
+  const id = import.meta.env.VITE_GA_MEASUREMENT_ID
+  if (!id) return
+
+  const w = window as unknown as { dataLayer?: unknown[]; gtag?: GtagFn }
+  w.dataLayer = w.dataLayer || []
+  const fn: GtagFn = (...args) => {
+    w.dataLayer!.push(args)
+  }
+  w.gtag = fn
+  fn('js', new Date())
+  fn('config', id, { send_page_view: false })
+
+  const script = document.createElement('script')
+  script.async = true
+  script.src = `https://www.googletagmanager.com/gtag/js?id=${encodeURIComponent(id)}`
+  document.head.appendChild(script)
 }
 
 /** A distinct screen in the SPA. Reported as a virtual page_view. */
