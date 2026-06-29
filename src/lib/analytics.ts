@@ -22,9 +22,13 @@ export function initAnalytics(): void {
 
   const w = window as unknown as { dataLayer?: unknown[]; gtag?: GtagFn }
   w.dataLayer = w.dataLayer || []
-  const fn: GtagFn = (...args) => {
-    w.dataLayer!.push(args)
-  }
+  // gtag.js processes the dataLayer queue by inspecting each entry's `arguments`
+  // object — a plain array (what a rest param produces) is read as a data push
+  // and silently ignored, so config/events never fire. Mirror Google's
+  // canonical snippet exactly and push `arguments`.
+  const fn = function (): void {
+    w.dataLayer!.push(arguments)
+  } as unknown as GtagFn
   w.gtag = fn
   fn('js', new Date())
   fn('config', id, { send_page_view: false })
