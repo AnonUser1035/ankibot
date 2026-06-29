@@ -3,6 +3,7 @@ import { DeckView } from './components/DeckView'
 import { ImportSaveButton } from './components/ImportSaveButton'
 import { Importer } from './components/Importer'
 import { Study } from './components/Study'
+import { type CoachingInput, applyCoaching } from './lib/coaching'
 import { exportDeckToFile, importDeckFromFile } from './lib/export'
 import type { ImportResult } from './lib/importApkg'
 import { SaveFileError } from './lib/saveFile'
@@ -76,26 +77,27 @@ function App() {
     setSession(startSession(queue))
   }
 
-  function onAnswer(grade: Grade) {
+  function onAnswer(grade: Grade, coaching?: CoachingInput) {
     if (!deck || !session) return
     const id = currentCardId(session)
     if (!id) return
     const card = deck.cards.find((c) => c.id === id)
     if (!card) return
-    const { state, updatedCard } = answerCurrent(
-      session,
-      card,
-      grade,
-      Date.now(),
-      config,
-    )
+    const now = Date.now()
+    const { state, updatedCard } = answerCurrent(session, card, grade, now, config)
+    // The press grades the SRS (updatedCard.reviewState). Coaching memory rides
+    // alongside — deterministic baseline always, AI note when present. The AI
+    // never mutates review state; only this human press does.
+    const coached = applyCoaching(updatedCard, grade, coaching, now)
+    const finalCard =
+      coached === updatedCard.coaching ? updatedCard : { ...updatedCard, coaching: coached }
     const nextDeck: Deck = {
       ...deck,
-      cards: deck.cards.map((c) => (c.id === updatedCard.id ? updatedCard : c)),
+      cards: deck.cards.map((c) => (c.id === finalCard.id ? finalCard : c)),
     }
     setDeck(nextDeck)
     setSession(state)
-    autosave(nextDeck) // persist progress on every answer
+    autosave(nextDeck) // persist progress + coaching on every answer
   }
 
   function onExport() {

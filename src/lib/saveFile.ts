@@ -12,13 +12,15 @@
  *  - Serializes the REAL `Deck` shape from types/deck.ts — including every
  *    card's full `reviewState`. We do not redefine the model here.
  */
-import type { Card, Deck, ReviewState } from '../types/deck'
+import { type Card, type Coaching, type Deck, type ReviewState, newCoaching } from '../types/deck'
 
 /**
  * Bump when the serialized structure changes in a way that needs migration.
- * v1 is the initial format; `migrate` is a pass-through stub at v1.
+ *  - v1: initial format (deck + reviewState).
+ *  - v2: adds per-card `coaching` memory (phase 6). v1 files migrate by
+ *    initializing every card's coaching to empty.
  */
-export const SAVE_FORMAT_VERSION = 1
+export const SAVE_FORMAT_VERSION = 2
 
 /** The on-disk / in-IndexedDB record. Plain JSON, no class instances. */
 export interface SaveFile {
@@ -76,16 +78,25 @@ export function deserialize(input: unknown): { deck: Deck; version: number } {
 }
 
 /**
- * Migrate a deck from an older save format up to the current one. At v1 this is
- * a pass-through; later versions add steps here (one per intermediate version)
- * so old backups keep loading after the model grows.
+ * Migrate a deck from an older save format up to the current one. One step per
+ * intermediate version, applied in order, so old backups keep loading.
  */
 function migrate(deck: Deck, fromVersion: number): Deck {
   let current = deck
-  // Example for the future:
-  //   if (fromVersion < 2) current = addCoachingDefaults(current)
-  void fromVersion
+  if (fromVersion < 2) current = migrateV1toV2(current)
   return current
+}
+
+/**
+ * v1 → v2: v1 saves predate coaching memory. Give every card an empty coaching
+ * record so the rest of the app can read `card.coaching` uniformly. (The
+ * tolerant parser leaves coaching undefined for v1 cards; this fills it.)
+ */
+function migrateV1toV2(deck: Deck): Deck {
+  return {
+    ...deck,
+    cards: deck.cards.map((c) => (c.coaching ? c : { ...c, coaching: newCoaching() })),
+  }
 }
 
 /** Suggested download filename: `<deckname>-<YYYYMMDD>.ankitutor.json`. */
@@ -124,7 +135,7 @@ function parseCard(value: unknown, index: number): Card {
   if (!isObject(value)) {
     throw new SaveFileError(`Card #${index + 1} in this save file is malformed.`)
   }
-  const { id, ankiNoteId, noteType, fields, front, back, tags, reviewState } =
+  const { id, ankiNoteId, noteType, fields, front, back, tags, reviewState, coaching } =
     value
   if (typeof id !== 'string') {
     throw new SaveFileError(`Card #${index + 1} in this save file has no id.`)
@@ -138,6 +149,20 @@ function parseCard(value: unknown, index: number): Card {
     back: typeof back === 'string' ? back : '',
     tags: Array.isArray(tags) ? tags.filter((t) => typeof t === 'string') : [],
     reviewState: parseReviewState(reviewState, index),
+    // Left undefined when absent (e.g. v1 saves) — migrate() fills the default.
+    coaching: parseCoaching(coaching),
+  }
+}
+
+/** Parse a coaching record, or undefined if absent/invalid (forward-compatible). */
+function parseCoaching(value: unknown): Coaching | undefined {
+  if (!isObject(value)) return undefined
+  const { note, lastWrongAnswer, missCount, updatedAt } = value
+  return {
+    note: typeof note === 'string' ? note : undefined,
+    lastWrongAnswer: typeof lastWrongAnswer === 'string' ? lastWrongAnswer : undefined,
+    missCount: typeof missCount === 'number' ? missCount : 0,
+    updatedAt: typeof updatedAt === 'number' ? updatedAt : 0,
   }
 }
 

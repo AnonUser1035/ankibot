@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import type { CoachingInput } from '../lib/coaching'
 import type { Grade } from '../lib/srs'
 import {
   type SessionState,
@@ -6,6 +7,7 @@ import {
   isComplete,
   remaining,
 } from '../lib/session'
+import type { ParsedVerdict } from '../lib/tutor'
 import type { Deck } from '../types/deck'
 import { TutorChat } from './TutorChat'
 
@@ -20,11 +22,17 @@ export function Study({
   deck: Deck
   session: SessionState
   swap: boolean
-  onAnswer: (grade: Grade) => void
+  /** Grade the current card. The optional coaching payload (from the tutor's
+   *  verdict) rides along; only this human press mutates SRS. */
+  onAnswer: (grade: Grade, coaching?: CoachingInput) => void
   onRestart: () => void
   onExit: () => void
 }) {
   const [revealed, setRevealed] = useState(false)
+  // The tutor's suggested rating for the current card (UI highlight only).
+  const [suggestion, setSuggestion] = useState<'got_it' | 'missed_it' | null>(null)
+  // Coaching payload captured from the latest verdict, applied on the press.
+  const pendingRef = useRef<CoachingInput | null>(null)
 
   const complete = isComplete(session)
   const currentId = currentCardId(session)
@@ -36,9 +44,23 @@ export function Study({
   const answer = useCallback(
     (grade: Grade) => {
       setRevealed(false)
-      onAnswer(grade)
+      setSuggestion(null)
+      const coaching = pendingRef.current ?? undefined
+      pendingRef.current = null
+      onAnswer(grade, coaching)
     },
     [onAnswer],
+  )
+
+  // The tutor assessed the learner's answer: pre-select a rating and reveal the
+  // answer so the suggestion is actionable. The human still presses (decision 4).
+  const handleVerdict = useCallback(
+    (verdict: ParsedVerdict, lastAnswer: string | undefined) => {
+      pendingRef.current = { lastAnswer, memoryNote: verdict.memoryNote }
+      setSuggestion(verdict.suggestedRating)
+      setRevealed(true)
+    },
+    [],
   )
 
   // Keyboard niceties: space reveals; 1 = Got it, 2 = Missed it (after reveal).
@@ -110,24 +132,41 @@ export function Study({
             <button
               type="button"
               onClick={() => answer('incorrect')}
-              className="rounded-lg border border-red-300 bg-red-50 px-6 py-2.5 text-sm font-medium text-red-800 hover:bg-red-100 dark:border-red-900 dark:bg-red-950 dark:text-red-200"
+              aria-pressed={suggestion === 'missed_it'}
+              className={`rounded-lg border bg-red-50 px-6 py-2.5 text-sm font-medium text-red-800 hover:bg-red-100 dark:bg-red-950 dark:text-red-200 ${
+                suggestion === 'missed_it'
+                  ? 'border-red-500 ring-2 ring-red-400 dark:border-red-500'
+                  : 'border-red-300 dark:border-red-900'
+              }`}
             >
               Missed it <kbd className="ml-1 opacity-60">2</kbd>
+              {suggestion === 'missed_it' && (
+                <span className="ml-2 text-xs font-normal opacity-70">suggested</span>
+              )}
             </button>
             <button
               type="button"
               onClick={() => answer('correct')}
-              className="rounded-lg border border-green-300 bg-green-50 px-6 py-2.5 text-sm font-medium text-green-800 hover:bg-green-100 dark:border-green-900 dark:bg-green-950 dark:text-green-200"
+              aria-pressed={suggestion === 'got_it'}
+              className={`rounded-lg border bg-green-50 px-6 py-2.5 text-sm font-medium text-green-800 hover:bg-green-100 dark:bg-green-950 dark:text-green-200 ${
+                suggestion === 'got_it'
+                  ? 'border-green-500 ring-2 ring-green-400 dark:border-green-500'
+                  : 'border-green-300 dark:border-green-900'
+              }`}
             >
               Got it <kbd className="ml-1 opacity-60">1</kbd>
+              {suggestion === 'got_it' && (
+                <span className="ml-2 text-xs font-normal opacity-70">suggested</span>
+              )}
             </button>
           </>
         )}
       </div>
 
       {/* AI tutor for the current card. Keyed by card.id so advancing the card
-          starts a fresh, per-card conversation (decision 4). */}
-      <TutorChat key={card.id} card={card} />
+          starts a fresh, per-card conversation, and its verdict pre-selects a
+          rating above (the human still presses — the AI never grades the SRS). */}
+      <TutorChat key={card.id} card={card} onVerdict={handleVerdict} />
     </div>
   )
 }

@@ -21,6 +21,24 @@ export interface ReviewState {
   lastReviewed: number | null
 }
 
+/**
+ * Per-card coaching memory (phase 6). A compact, evolving "what you keep getting
+ * wrong" note that persists across sessions and is fed back into the tutor's
+ * context. It NEVER influences scheduling — it only enriches AI help and the
+ * rating suggestion. Optional on the card: absent === no memory yet, so the app
+ * degrades to phase-4 behavior when it's missing.
+ */
+export interface Coaching {
+  /** A single evolving one-liner the model rewrites — not an accumulating log. */
+  note?: string
+  /** The learner's most recent wrong answer (deterministic baseline). */
+  lastWrongAnswer?: string
+  /** How many times this card has been missed. */
+  missCount: number
+  /** Last time coaching changed (epoch ms), or 0 if never. */
+  updatedAt: number
+}
+
 export interface Card {
   /** Stable id derived from the Anki note guid + template ordinal. */
   id: string
@@ -38,6 +56,12 @@ export interface Card {
   tags: string[]
   /** Our scheduling state. Initialized to "new card" defaults on import. */
   reviewState: ReviewState
+  /**
+   * Coaching memory (phase 6). Optional so phase-4 saves and cards without
+   * memory keep working — treat absent as "empty". Only the human's button
+   * press mutates SRS; coaching is pure enrichment alongside it.
+   */
+  coaching?: Coaching
 }
 
 export interface Deck {
@@ -51,4 +75,9 @@ export interface Deck {
 /** Build a fresh "new card" review state. Phase 3 owns all later transitions. */
 export function newReviewState(now: number): ReviewState {
   return { box: 0, due: now, reps: 0, lapses: 0, lastReviewed: null }
+}
+
+/** Build an empty coaching record (no memory yet). */
+export function newCoaching(): Coaching {
+  return { missCount: 0, updatedAt: 0 }
 }

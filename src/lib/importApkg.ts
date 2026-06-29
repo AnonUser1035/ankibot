@@ -6,7 +6,7 @@ import initSqlJs, { type Database, type SqlJsStatic } from 'sql.js'
 // filename coupling, and it's served with the correct application/wasm MIME
 // (a plain public/ path can fall through to index.html and fail to compile).
 import sqlWasmUrl from 'sql.js/dist/sql-wasm-browser.wasm?url'
-import { type Card, type Deck, newReviewState } from '../types/deck'
+import { type Card, type Deck, newCoaching, newReviewState } from '../types/deck'
 import { type CardTemplate, renderBack, renderFront } from './ankiTemplate'
 import { stripHtml } from './html'
 
@@ -193,6 +193,7 @@ function parseAnkiDatabase(
         back,
         tags: String(note.tags).trim().split(/\s+/).filter(Boolean),
         reviewState: newReviewState(now),
+        coaching: newCoaching(),
       })
     }
 

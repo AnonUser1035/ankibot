@@ -23,6 +23,12 @@ function sampleDeck(): Deck {
         back: 'Paris',
         tags: ['geo', 'europe'],
         reviewState: { box: 3, due: 1_700_100_000_000, reps: 5, lapses: 1, lastReviewed: 1_700_050_000_000 },
+        coaching: {
+          note: 'Confuses Paris with Lyon',
+          lastWrongAnswer: 'Lyon',
+          missCount: 2,
+          updatedAt: 1_700_060_000_000,
+        },
       },
       {
         id: 'b:0',
@@ -50,6 +56,44 @@ describe('serialize / deserialize', () => {
     const { deck: restored, version } = deserialize(JSON.parse(JSON.stringify(save)))
     expect(version).toBe(SAVE_FORMAT_VERSION)
     expect(restored).toEqual(deck)
+  })
+
+  it('round-trips per-card coaching memory intact', () => {
+    const { deck } = deserialize(JSON.parse(JSON.stringify(serialize(sampleDeck()))))
+    expect(deck.cards[0].coaching).toEqual({
+      note: 'Confuses Paris with Lyon',
+      lastWrongAnswer: 'Lyon',
+      missCount: 2,
+      updatedAt: 1_700_060_000_000,
+    })
+  })
+
+  it('migrates a v1 save (no coaching) by initializing empty coaching', () => {
+    const v1 = {
+      version: 1,
+      exportedAt: 1_700_000_000_000,
+      deck: {
+        id: 'old-deck',
+        name: 'Old',
+        importedAt: 0,
+        cards: [
+          {
+            id: 'a:0',
+            ankiNoteId: 1,
+            noteType: 'Basic',
+            fields: { Front: 'Q', Back: 'A' },
+            front: 'Q',
+            back: 'A',
+            tags: [],
+            reviewState: newReviewState(0),
+            // no coaching field — this is a phase-4 save
+          },
+        ],
+      },
+    }
+    const { deck, version } = deserialize(v1)
+    expect(version).toBe(1)
+    expect(deck.cards[0].coaching).toEqual({ missCount: 0, updatedAt: 0 })
   })
 
   it('ignores unknown fields (forward compatibility)', () => {

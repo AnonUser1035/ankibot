@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import {
+  type ParsedVerdict,
   type TutorTurn,
   TutorError,
   isTutorConfigured,
@@ -10,24 +11,32 @@ import type { Card } from '../types/deck'
 /**
  * Streaming AI chat alongside the current card.
  *
- * Scoped PER CARD (decision 4): the parent mounts this with `key={card.id}`, so
- * advancing the card remounts it fresh — a new tutoring exchange, tight context.
- * On mount the tutor opens proactively (decision 3); the user types; replies
+ * Scoped PER CARD: the parent mounts this with `key={card.id}`, so advancing the
+ * card remounts it fresh — a new tutoring exchange with that card's coaching
+ * memory. On mount the tutor opens proactively; the learner types; replies
  * stream in token-by-token.
  *
- * This component never touches SRS/review state — purely conversational.
+ * Phase 6: after the learner answers, the tutor returns a structured verdict
+ * (parsed out of the reply, never shown). We surface it via `onVerdict` so the
+ * card view can pre-select a rating button. This component never touches SRS.
  */
-export function TutorChat({ card }: { card: Card }) {
+export function TutorChat({
+  card,
+  onVerdict,
+}: {
+  card: Card
+  /** Called when a structured verdict is parsed. `lastAnswer` is the learner's
+   *  most recent typed answer (for the deterministic coaching baseline). */
+  onVerdict?: (verdict: ParsedVerdict, lastAnswer: string | undefined) => void
+}) {
   const [turns, setTurns] = useState<TutorTurn[]>([])
   const [input, setInput] = useState('')
   const [streaming, setStreaming] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
-  // Track the active request so unmount (card change) aborts the stream.
   const abortRef = useRef<AbortController | null>(null)
 
-  // Proactive opener on mount. Empty deps: this runs once per card because the
-  // parent keys us by card.id (remount === new card).
+  // Proactive opener on mount (once per card — parent keys us by card.id).
   useEffect(() => {
     if (!isTutorConfigured()) return
     runTutor([])
@@ -35,15 +44,11 @@ export function TutorChat({ card }: { card: Card }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Keep the latest message in view as it streams.
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ block: 'end' })
   }, [turns])
 
-  /**
-   * Stream a tutor reply given the conversation `history` to send. Appends an
-   * empty assistant turn and fills it as chunks arrive.
-   */
+  /** Stream a tutor reply for the given conversation `history`. */
   function runTutor(history: TutorTurn[]) {
     abortRef.current?.abort()
     const ctrl = new AbortController()
@@ -54,27 +59,36 @@ export function TutorChat({ card }: { card: Card }) {
     setTurns((t) => [...t, { role: 'assistant', content: '' }])
 
     void (async () => {
+      let verdict: ParsedVerdict | null = null
+      let any = false
       try {
-        let any = false
-        for await (const chunk of respond({
+        const it = respond({
           card,
+          coaching: card.coaching,
           recentTurns: history,
           signal: ctrl.signal,
-        })) {
+        })
+        while (true) {
+          const { value, done } = await it.next()
+          if (done) {
+            verdict = value
+            break
+          }
           any = true
           setTurns((t) => {
             const copy = t.slice()
             const last = copy[copy.length - 1]
-            copy[copy.length - 1] = { role: 'assistant', content: last.content + chunk }
+            copy[copy.length - 1] = { role: 'assistant', content: last.content + value }
             return copy
           })
         }
-        // If the stream produced nothing (e.g. empty reply), drop the placeholder.
         if (!any) setTurns((t) => t.slice(0, -1))
+        if (verdict && !ctrl.signal.aborted) {
+          onVerdict?.(verdict, lastUserAnswer(history))
+        }
       } catch (err) {
         if (ctrl.signal.aborted) return
         setError(err instanceof TutorError ? err.message : 'The tutor hit an error.')
-        // Remove the empty assistant placeholder on failure.
         setTurns((t) => (t.at(-1)?.content === '' ? t.slice(0, -1) : t))
       } finally {
         if (!ctrl.signal.aborted) setStreaming(false)
@@ -163,4 +177,12 @@ export function TutorChat({ card }: { card: Card }) {
       </form>
     </div>
   )
+}
+
+/** The learner's most recent typed answer in this history, if any. */
+function lastUserAnswer(history: TutorTurn[]): string | undefined {
+  for (let i = history.length - 1; i >= 0; i--) {
+    if (history[i].role === 'user') return history[i].content
+  }
+  return undefined
 }
