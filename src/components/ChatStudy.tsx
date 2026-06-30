@@ -16,6 +16,7 @@ import {
   respond,
 } from '../lib/tutor'
 import type { Card, Deck } from '../types/deck'
+import { FormattedMessage } from './FormattedMessage'
 import { SessionSummary } from './SessionSummary'
 
 /**
@@ -307,10 +308,16 @@ export function ChatStudy({
                 className={
                   turn.role === 'user'
                     ? 'max-w-[85%] whitespace-pre-wrap rounded-2xl bg-neutral-900 px-3 py-2 text-sm text-white dark:bg-neutral-100 dark:text-neutral-900'
-                    : 'max-w-[85%] whitespace-pre-wrap rounded-2xl bg-neutral-100 px-3 py-2 text-sm text-neutral-800 dark:bg-neutral-800 dark:text-neutral-100'
+                    : 'max-w-[85%] rounded-2xl bg-neutral-100 px-3 py-2 text-sm text-neutral-800 dark:bg-neutral-800 dark:text-neutral-100'
                 }
               >
-                {turn.content || <TypingDots />}
+                {turn.role === 'user' ? (
+                  turn.content
+                ) : turn.content ? (
+                  <FormattedMessage content={turn.content} />
+                ) : (
+                  <TypingDots />
+                )}
               </div>
             </div>
           ))}
