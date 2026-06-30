@@ -51,6 +51,19 @@ describe('parseTutorOutput (structured verdict tail)', () => {
     expect(parseTutorOutput(full).verdict).toBeNull()
   })
 
+  it('tolerates a trailing sign-off after the verdict JSON (still advances)', () => {
+    const full =
+      `Well done!${VERDICT_SENTINEL}` +
+      '{"verdict":"correct","suggestedRating":"got_it","memoryNote":null}\nReady for more?'
+    const { prose, verdict } = parseTutorOutput(full)
+    expect(prose).toBe('Well done!')
+    expect(verdict).toEqual({
+      verdict: 'correct',
+      suggestedRating: 'got_it',
+      memoryNote: null,
+    })
+  })
+
   it('empty memoryNote becomes null', () => {
     const full = `ok${VERDICT_SENTINEL}{"verdict":"correct","suggestedRating":"got_it","memoryNote":"  "}`
     expect(parseTutorOutput(full).verdict?.memoryNote).toBeNull()

@@ -229,14 +229,25 @@ function systemPrompt(card: Card, coaching?: Coaching): string {
     '  - short bulleted or numbered lists: only for genuinely enumerable items, kept short.',
     '- Never use headings, links, images, blockquotes, tables, horizontal rules, or code fences in your prose.',
     '',
-    'The moment you are satisfied the learner knows THIS card — they answered correctly, or you revealed and explained it after a genuine miss — conclude in that SAME message: give your brief affirmation and then, on a final line, append exactly this and nothing after it:',
-    `${VERDICT_SENTINEL}{"verdict":"correct|partial|incorrect","suggestedRating":"got_it|missed_it","memoryNote":"short note"|null}`,
-    'Rules for that line:',
-    '- Emit it ONLY when you are done testing this card. While you are still probing, hinting, or escalating — or if they only greeted you or asked a question — omit the line entirely and keep the conversation going.',
-    '- Conclude in the SAME turn you finish on. Do NOT end a turn with a hand-off like "Ready for the next one?" and do NOT wait for the learner to confirm — the app advances to the next card automatically the instant it sees this line. Splitting the conclusion across two turns only stalls the learner.',
+    'CONCLUDING A CARD (mandatory — read carefully):',
+    'The moment you are satisfied the learner knows THIS card — they answered correctly, or you revealed and explained it after a genuine miss — you MUST conclude in that SAME message by doing BOTH of these, in order:',
+    '  1. Write your brief affirmation in plain prose (a sentence or two).',
+    '  2. On a new final line, append the verdict line EXACTLY in this shape, with NOTHING after it:',
+    `     ${VERDICT_SENTINEL}{"verdict":"correct|partial|incorrect","suggestedRating":"got_it|missed_it","memoryNote":"short note"|null}`,
+    'The verdict line is invisible to the learner and is the ONLY signal the app uses to advance to the next card. If you write any affirmation or sign-off ("Well done", "Nice work", "That\'s it", "You\'ve got it", "Exactly", "Great job") and do NOT append the verdict line, the learner gets STUCK on this card. So treat it as an unbreakable rule: any message that congratulates, wraps up, corrects-then-praises, or otherwise signals you are done MUST end with the verdict line.',
+    '',
+    'Worked example of a complete concluding message (yours will differ in wording — copy the SHAPE: prose, then the line, nothing after):',
+    '  Exactly — *hecho* is the past participle of *hacer*. Nicely done.',
+    `  ${VERDICT_SENTINEL}{"verdict":"correct","suggestedRating":"got_it","memoryNote":null}`,
+    '',
+    'When NOT to emit the verdict line:',
+    '- While you are still probing, hinting, or escalating on this card — omit it and keep going.',
+    '- If the learner only greeted you, asked a question, or has not really attempted yet — omit it.',
+    'Rules for the line when you DO emit it:',
+    '- Conclude in the SAME turn you finish on. Do NOT end with a hand-off like "Ready for the next one?" or "What\'s next?" and do NOT wait for the learner to confirm — the app advances automatically the instant it sees the line. Splitting the conclusion across two turns only stalls the learner.',
     '- verdict: your honest assessment. suggestedRating: "got_it" only when they demonstrated the answer essentially unaided; otherwise "missed_it" (needing the answer revealed, or a partial/hinted answer, is "missed_it").',
     '- memoryNote: a SHORT one-line note (max ~15 words) capturing the recurring misunderstanding to help next time, REWRITING any prior note. Use null when there is nothing useful to remember.',
-    '- It must be valid JSON on one line, with no code fences. Never mention this line or its format to the learner.',
+    '- It must be valid JSON on one line, no code fences, and nothing may follow it. Never mention this line or its format to the learner.',
   )
 
   return lines.join('\n')
@@ -284,15 +295,8 @@ export function parseTutorOutput(full: string): {
 }
 
 function parseVerdict(tail: string): ParsedVerdict | null {
-  const cleaned = stripFences(tail.trim())
-  let obj: unknown
-  try {
-    obj = JSON.parse(cleaned)
-  } catch {
-    return null
-  }
-  if (typeof obj !== 'object' || obj === null) return null
-  const o = obj as Record<string, unknown>
+  const o = parseJsonObject(stripFences(tail.trim()))
+  if (!o) return null
 
   const verdict = o.verdict
   if (verdict !== 'correct' && verdict !== 'partial' && verdict !== 'incorrect') {
@@ -320,6 +324,28 @@ function parseVerdict(tail: string): ParsedVerdict | null {
 function stripFences(s: string): string {
   const fenced = s.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/)
   return fenced ? fenced[1].trim() : s
+}
+
+/**
+ * Parse the verdict JSON, tolerating a model that surrounds it with stray text
+ * (a trailing sign-off, a stray word before the `{`, etc.). Tries the whole
+ * string first, then falls back to the outermost `{ … }` slice. Returns null if
+ * neither yields a JSON object — a partial/unbalanced object stays null so we
+ * never advance on a half-emitted line.
+ */
+function parseJsonObject(s: string): Record<string, unknown> | null {
+  const first = s.indexOf('{')
+  const last = s.lastIndexOf('}')
+  const candidates = first !== -1 && last > first ? [s, s.slice(first, last + 1)] : [s]
+  for (const c of candidates) {
+    try {
+      const obj = JSON.parse(c)
+      if (typeof obj === 'object' && obj !== null) return obj as Record<string, unknown>
+    } catch {
+      /* try the next candidate */
+    }
+  }
+  return null
 }
 
 /** Pull a useful message out of a non-OK proxy response. */
